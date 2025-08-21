@@ -18,7 +18,8 @@ use sp_storage::StateVersion;
 use sp_trie::{LayoutV0, LayoutV1, TrieConfiguration};
 
 /// The minimum number of field elements to allocate for the preimage.
-pub const MIN_FIELD_ELEMENT_PREIMAGE_LEN: usize = 94;
+pub const MIN_FIELD_ELEMENT_PREIMAGE_LEN: usize = 188;
+pub const BIT_32_LIMB_MASK: u64 = 0xFFFF_FFFF;
 
 #[derive(Default)]
 pub struct PoseidonStdHasher(Vec<u8>);
@@ -50,10 +51,10 @@ impl Hasher for PoseidonHasher {
 
 impl PoseidonHasher {
     pub fn hash_padded_felts(mut x: Vec<GoldilocksField>) -> Vec<u8> {
-        log::debug!(target: "poseidon", "poseidon_hash_felts x: {:?}", x);
+        log::debug!(target: "poseidon", "poseidon_hash_felts x: {x:?}");
 
-        // Workaround to support variable-length input in circuit. We need to pad the preimage in the
-        // same way as the circuit to ensure consistent hashes.
+        // Workaround to support variable-length input in circuit. We need to pad the preimage in
+        // the same way as the circuit to ensure consistent hashes.
         if x.len() < MIN_FIELD_ELEMENT_PREIMAGE_LEN {
             x.resize(MIN_FIELD_ELEMENT_PREIMAGE_LEN, GoldilocksField::ZERO);
         }
@@ -62,8 +63,8 @@ impl PoseidonHasher {
     }
 
     pub fn hash_padded(x: &[u8]) -> Vec<u8> {
-        log::debug!(target: "poseidon", "poseidon_hash x: {:?}", x);
-        Self::hash_padded_felts(bytes_to_felts(x))
+        log::debug!(target: "poseidon", "poseidon_hash x: {x:?}");
+        Self::hash_padded_felts(injective_bytes_to_felts(x))
     }
 
     pub fn hash_no_pad(x: Vec<GoldilocksField>) -> Vec<u8> {
@@ -87,9 +88,9 @@ impl PoseidonHasher {
         let mut y = x;
         let (transfer_count, from_account, to_account, amount): (u64, AccountId, AccountId, u128) =
             Decode::decode(&mut y).expect("already asserted input length. qed");
-        felts.push(GoldilocksField::from_noncanonical_u64(transfer_count));
-        felts.extend(bytes_to_felts(&from_account.encode()));
-        felts.extend(bytes_to_felts(&to_account.encode()));
+        felts.extend(u64_to_felts(transfer_count));
+        felts.extend(digest_bytes_to_felts(&from_account.encode()));
+        felts.extend(digest_bytes_to_felts(&to_account.encode()));
         felts.extend(u128_to_felts(amount));
         let hash = PoseidonHasher::hash_no_pad(felts);
         hash.as_slice()[0..32]
@@ -112,50 +113,74 @@ impl Hash for PoseidonHasher {
 
     fn ordered_trie_root(input: Vec<Vec<u8>>, state_version: StateVersion) -> Self::Output {
         log::debug!(target: "poseidon",
-            "PoseidonHasher::ordered_trie_root input={:?} version={:?}",
-            input,
-            state_version
+            "PoseidonHasher::ordered_trie_root input={input:?} version={state_version:?}",
         );
         let res = match state_version {
             StateVersion::V0 => LayoutV0::<PoseidonHasher>::ordered_trie_root(input),
             StateVersion::V1 => LayoutV1::<PoseidonHasher>::ordered_trie_root(input),
         };
-        log::debug!(target: "poseidon", "PoseidonHasher::ordered_trie_root res={:?}", res);
+        log::debug!(target: "poseidon", "PoseidonHasher::ordered_trie_root res={res:?}");
         res
     }
 
     fn trie_root(input: Vec<(Vec<u8>, Vec<u8>)>, version: StateVersion) -> Self::Output {
         log::debug!(target: "poseidon",
-            "PoseidonHasher::trie_root input={:?} version={:?}",
-            input,
-            version
+            "PoseidonHasher::trie_root input={input:?} version={version:?}"
         );
         let res = match version {
             StateVersion::V0 => LayoutV0::<PoseidonHasher>::trie_root(input),
             StateVersion::V1 => LayoutV1::<PoseidonHasher>::trie_root(input),
         };
-        log::debug!(target: "poseidon", "PoseidonHasher::trie_root res={:?}", res);
+        log::debug!(target: "poseidon", "PoseidonHasher::trie_root res={res:?}");
         res
     }
 }
 
 pub fn u128_to_felts(num: u128) -> Vec<GoldilocksField> {
-    let mut amount_felts: Vec<GoldilocksField> = Vec::with_capacity(2);
-    let amount_high = GoldilocksField::from_noncanonical_u64((num >> 64) as u64);
-    let amount_low = GoldilocksField::from_noncanonical_u64(num as u64);
-    amount_felts.push(amount_high);
-    amount_felts.push(amount_low);
-    amount_felts
+    const FELTS_PER_U128: usize = 4;
+    (0..FELTS_PER_U128)
+        .map(|i| {
+            let shift = 96 - 32 * i;
+            let limb = ((num >> shift) & BIT_32_LIMB_MASK as u128) as u64;
+            GoldilocksField::from_canonical_u64(limb)
+        })
+        .collect::<Vec<_>>()
 }
 
-pub fn bytes_to_felts(input: &[u8]) -> Vec<GoldilocksField> {
-    log::debug!(target: "poseidon", "bytes_to_felts input: {:?}", input);
+pub fn u64_to_felts(num: u64) -> Vec<GoldilocksField> {
+    [
+        GoldilocksField::from_noncanonical_u64((num >> 32) & BIT_32_LIMB_MASK),
+        GoldilocksField::from_noncanonical_u64(num & BIT_32_LIMB_MASK),
+    ]
+    .to_vec()
+}
+
+pub fn injective_bytes_to_felts(input: &[u8]) -> Vec<GoldilocksField> {
+    log::debug!(target: "poseidon", "bytes_to_felts input: {input:?}");
+
+    const BYTES_PER_ELEMENT: usize = 4;
+
+    let mut field_elements: Vec<GoldilocksField> = Vec::new();
+    for chunk in input.chunks(BYTES_PER_ELEMENT) {
+        let mut bytes = [0u8; BYTES_PER_ELEMENT];
+        bytes[..chunk.len()].copy_from_slice(chunk);
+        // Convert the chunk to a field element.
+        let value = u32::from_le_bytes(bytes);
+        let field_element = GoldilocksField::from_noncanonical_u64(value as u64);
+        field_elements.push(field_element);
+    }
+
+    field_elements
+}
+
+pub fn digest_bytes_to_felts(input: &[u8]) -> Vec<GoldilocksField> {
+    log::debug!(target: "poseidon", "bytes_to_felts input: {input:?}");
 
     const BYTES_PER_ELEMENT: usize = 8;
 
     let mut field_elements: Vec<GoldilocksField> = Vec::new();
     for chunk in input.chunks(BYTES_PER_ELEMENT) {
-        let mut bytes = [0u8; 8];
+        let mut bytes = [0u8; BYTES_PER_ELEMENT];
         bytes[..chunk.len()].copy_from_slice(chunk);
         // Convert the chunk to a field element.
         let value = u64::from_le_bytes(bytes);
@@ -164,18 +189,6 @@ pub fn bytes_to_felts(input: &[u8]) -> Vec<GoldilocksField> {
     }
 
     field_elements
-}
-
-pub fn felts_to_bytes(input: &[GoldilocksField]) -> Vec<u8> {
-    let mut bytes: Vec<u8> = Vec::new();
-
-    for field_element in input {
-        let value = field_element.to_noncanonical_u64();
-        let value_bytes = value.to_le_bytes();
-        bytes.extend_from_slice(&value_bytes);
-    }
-
-    bytes
 }
 
 pub fn string_to_felt(input: &str) -> GoldilocksField {
