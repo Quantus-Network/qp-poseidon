@@ -1,6 +1,6 @@
 [package]
 name = "qp-poseidon"
-version = "0.9.0"
+version = "0.9.1"
 description = "Poseidon hash implementation for Substrate/Polkadot ecosystem using plonky2 field arithmetic"
 readme = "README.md"
 license = "MIT-0"
