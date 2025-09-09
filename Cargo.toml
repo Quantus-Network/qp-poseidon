@@ -20,10 +20,10 @@ categories = ["cryptography"]
 [dependencies]
 log = { version = "0.4.22", default-features = false }
 scale-info = { version = "2.11.1", default-features = false }
-sp-runtime = { version = "42.0.0", default-features = false }
-sp-core = { version = "37.0.0", default-features = false }
-sp-storage = { version = "22.0.0", default-features = false }
-sp-trie = { version = "40.0.0", default-features = false }
+sp-runtime = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2506", default-features = false }
+sp-core = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2506", default-features = false }
+sp-storage = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2506", default-features = false }
+sp-trie = { git = "https://github.com/paritytech/polkadot-sdk", branch = "stable2506", default-features = false }
 codec = { version = "3.7.5", default-features = false, package = "parity-scale-codec" }
 serde = { version = "1.0.217", default-features = false, optional = true }
 qp-plonky2 = { version = "1.1.0", default-features = false, features = [
