@@ -10,6 +10,7 @@ use plonky2::{
 	plonk::config::{GenericHashOut, Hasher as PlonkyHasher},
 };
 use scale_info::prelude::vec::Vec;
+use scale_info::TypeInfo;
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
 
@@ -31,7 +32,7 @@ impl StdHasher for PoseidonStdHasher {
 	}
 }
 
-#[derive(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone, Debug, Encode, Decode, TypeInfo)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct PoseidonHasher;
 
