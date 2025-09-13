@@ -10,6 +10,8 @@ use plonky2::{
 	plonk::config::{GenericHashOut, Hasher as PlonkyHasher},
 };
 use scale_info::prelude::vec::Vec;
+#[cfg(feature = "serde")]
+use serde::{Serialize, Deserialize};
 
 /// The minimum number of field elements to allocate for the preimage.
 pub const MIN_FIELD_ELEMENT_PREIMAGE_LEN: usize = 188;
@@ -78,43 +80,6 @@ impl PoseidonHasher {
 		hash.as_slice()[0..32].try_into().expect("already asserted input length. qed")
 	}
 }
-
-// impl Hash for PoseidonHasher {
-// 	type Output = H256;
-//
-// 	fn hash(s: &[u8]) -> Self::Output {
-// 		H256::from_slice(&Self::hash_padded(s))
-// 	}
-//
-// 	/// Produce the hash of some codec-encodable value.
-// 	fn hash_of<S: Encode>(s: &S) -> Self::Output {
-// 		Encode::using_encoded(s, <Self as Hasher>::hash)
-// 	}
-//
-// 	fn ordered_trie_root(input: Vec<Vec<u8>>, state_version: StateVersion) -> Self::Output {
-// 		log::debug!(target: "poseidon",
-// 			"PoseidonHasher::ordered_trie_root input={input:?} version={state_version:?}",
-// 		);
-// 		let res = match state_version {
-// 			StateVersion::V0 => LayoutV0::<PoseidonHasher>::ordered_trie_root(input),
-// 			StateVersion::V1 => LayoutV1::<PoseidonHasher>::ordered_trie_root(input),
-// 		};
-// 		log::debug!(target: "poseidon", "PoseidonHasher::ordered_trie_root res={res:?}");
-// 		res
-// 	}
-//
-// 	fn trie_root(input: Vec<(Vec<u8>, Vec<u8>)>, version: StateVersion) -> Self::Output {
-// 		log::debug!(target: "poseidon",
-// 			"PoseidonHasher::trie_root input={input:?} version={version:?}"
-// 		);
-// 		let res = match version {
-// 			StateVersion::V0 => LayoutV0::<PoseidonHasher>::trie_root(input),
-// 			StateVersion::V1 => LayoutV1::<PoseidonHasher>::trie_root(input),
-// 		};
-// 		log::debug!(target: "poseidon", "PoseidonHasher::trie_root res={res:?}");
-// 		res
-// 	}
-// }
 
 pub fn u128_to_felts(num: u128) -> Vec<GoldilocksField> {
 	const FELTS_PER_U128: usize = 4;
