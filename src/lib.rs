@@ -1,6 +1,5 @@
-#![cfg_attr(not(feature = "std"), no_std)]
-
-use codec::{Decode, Encode, MaxEncodedLen};
+#![no_std]
+use codec::{Decode, Encode};
 use core::hash::Hasher as StdHasher;
 use plonky2::{
 	field::{
@@ -10,13 +9,7 @@ use plonky2::{
 	hash::poseidon::PoseidonHash,
 	plonk::config::{GenericHashOut, Hasher as PlonkyHasher},
 };
-use scale_info::TypeInfo;
-use sp_core::{Hasher, H256};
-use sp_runtime::{traits::Hash, RuntimeDebug, Vec};
-#[cfg(feature = "serde")]
-use sp_runtime::{Deserialize, Serialize};
-use sp_storage::StateVersion;
-use sp_trie::{LayoutV0, LayoutV1, TrieConfiguration};
+use scale_info::prelude::vec::Vec;
 
 /// The minimum number of field elements to allocate for the preimage.
 pub const MIN_FIELD_ELEMENT_PREIMAGE_LEN: usize = 188;
@@ -36,19 +29,10 @@ impl StdHasher for PoseidonStdHasher {
 	}
 }
 
-#[derive(PartialEq, Eq, Clone, RuntimeDebug, TypeInfo)]
+#[derive(PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct PoseidonHasher;
 
-impl Hasher for PoseidonHasher {
-	type Out = H256;
-	type StdHasher = PoseidonStdHasher;
-	const LENGTH: usize = 32;
-
-	fn hash(x: &[u8]) -> H256 {
-		H256::from_slice(&Self::hash_padded(x))
-	}
-}
 
 impl PoseidonHasher {
 	pub fn hash_padded_felts(mut x: Vec<GoldilocksField>) -> Vec<u8> {
@@ -74,18 +58,15 @@ impl PoseidonHasher {
 
 	// This function should only be used to compute the quantus storage key for Transfer Proofs
 	// It breaks up the bytes input in a specific way that mimics how our zk-circuit does it
-	pub fn hash_storage<AccountId: Decode + Encode + MaxEncodedLen>(x: &[u8]) -> [u8; 32] {
-		let expected_storage_len = u64::max_encoded_len() +
-			AccountId::max_encoded_len() +
-			AccountId::max_encoded_len() +
-			u128::max_encoded_len();
+	pub fn hash_storage<AccountId: Decode + Encode>(x: &[u8]) -> [u8; 32] {
+		const STORAGE_HASH_SIZE: usize = 32;
 		debug_assert!(
-			x.len() == expected_storage_len,
+			x.len() == STORAGE_HASH_SIZE,
 			"Input must be exactly {} bytes, but was {}",
-			expected_storage_len,
+			STORAGE_HASH_SIZE,
 			x.len()
 		);
-		let mut felts = Vec::with_capacity(expected_storage_len);
+		let mut felts = Vec::with_capacity(STORAGE_HASH_SIZE);
 		let mut y = x;
 		let (transfer_count, from_account, to_account, amount): (u64, AccountId, AccountId, u128) =
 			Decode::decode(&mut y).expect("already asserted input length. qed");
@@ -98,42 +79,42 @@ impl PoseidonHasher {
 	}
 }
 
-impl Hash for PoseidonHasher {
-	type Output = H256;
-
-	fn hash(s: &[u8]) -> Self::Output {
-		H256::from_slice(&Self::hash_padded(s))
-	}
-
-	/// Produce the hash of some codec-encodable value.
-	fn hash_of<S: Encode>(s: &S) -> Self::Output {
-		Encode::using_encoded(s, <Self as Hasher>::hash)
-	}
-
-	fn ordered_trie_root(input: Vec<Vec<u8>>, state_version: StateVersion) -> Self::Output {
-		log::debug!(target: "poseidon",
-			"PoseidonHasher::ordered_trie_root input={input:?} version={state_version:?}",
-		);
-		let res = match state_version {
-			StateVersion::V0 => LayoutV0::<PoseidonHasher>::ordered_trie_root(input),
-			StateVersion::V1 => LayoutV1::<PoseidonHasher>::ordered_trie_root(input),
-		};
-		log::debug!(target: "poseidon", "PoseidonHasher::ordered_trie_root res={res:?}");
-		res
-	}
-
-	fn trie_root(input: Vec<(Vec<u8>, Vec<u8>)>, version: StateVersion) -> Self::Output {
-		log::debug!(target: "poseidon",
-			"PoseidonHasher::trie_root input={input:?} version={version:?}"
-		);
-		let res = match version {
-			StateVersion::V0 => LayoutV0::<PoseidonHasher>::trie_root(input),
-			StateVersion::V1 => LayoutV1::<PoseidonHasher>::trie_root(input),
-		};
-		log::debug!(target: "poseidon", "PoseidonHasher::trie_root res={res:?}");
-		res
-	}
-}
+// impl Hash for PoseidonHasher {
+// 	type Output = H256;
+//
+// 	fn hash(s: &[u8]) -> Self::Output {
+// 		H256::from_slice(&Self::hash_padded(s))
+// 	}
+//
+// 	/// Produce the hash of some codec-encodable value.
+// 	fn hash_of<S: Encode>(s: &S) -> Self::Output {
+// 		Encode::using_encoded(s, <Self as Hasher>::hash)
+// 	}
+//
+// 	fn ordered_trie_root(input: Vec<Vec<u8>>, state_version: StateVersion) -> Self::Output {
+// 		log::debug!(target: "poseidon",
+// 			"PoseidonHasher::ordered_trie_root input={input:?} version={state_version:?}",
+// 		);
+// 		let res = match state_version {
+// 			StateVersion::V0 => LayoutV0::<PoseidonHasher>::ordered_trie_root(input),
+// 			StateVersion::V1 => LayoutV1::<PoseidonHasher>::ordered_trie_root(input),
+// 		};
+// 		log::debug!(target: "poseidon", "PoseidonHasher::ordered_trie_root res={res:?}");
+// 		res
+// 	}
+//
+// 	fn trie_root(input: Vec<(Vec<u8>, Vec<u8>)>, version: StateVersion) -> Self::Output {
+// 		log::debug!(target: "poseidon",
+// 			"PoseidonHasher::trie_root input={input:?} version={version:?}"
+// 		);
+// 		let res = match version {
+// 			StateVersion::V0 => LayoutV0::<PoseidonHasher>::trie_root(input),
+// 			StateVersion::V1 => LayoutV1::<PoseidonHasher>::trie_root(input),
+// 		};
+// 		log::debug!(target: "poseidon", "PoseidonHasher::trie_root res={res:?}");
+// 		res
+// 	}
+// }
 
 pub fn u128_to_felts(num: u128) -> Vec<GoldilocksField> {
 	const FELTS_PER_U128: usize = 4;
@@ -243,6 +224,7 @@ mod tests {
 	use env_logger;
 	use hex;
 	use plonky2::field::types::Field64;
+	use scale_info::prelude::vec;
 
 	#[ctor::ctor]
 	fn init_logger_global() {
@@ -251,36 +233,36 @@ mod tests {
 
 	#[test]
 	fn test_empty_input() {
-		let result = <PoseidonHasher as Hasher>::hash(&[]);
-		assert_eq!(result.0.len(), 32);
+		let result = PoseidonHasher::hash_padded(&[]);
+		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_single_byte() {
 		let input = vec![42u8];
-		let result = <PoseidonHasher as Hasher>::hash(&input);
-		assert_eq!(result.0.len(), 32);
+		let result = PoseidonHasher::hash_padded(&input);
+		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_exactly_32_bytes() {
 		let input = [1u8; 32];
-		let result = <PoseidonHasher as Hasher>::hash(&input);
-		assert_eq!(result.0.len(), 32);
+		let result = PoseidonHasher::hash_padded(&input);
+		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_multiple_chunks() {
 		let input = [2u8; 64]; // Two chunks
-		let result = <PoseidonHasher as Hasher>::hash(&input);
-		assert_eq!(result.0.len(), 32);
+		let result = PoseidonHasher::hash_padded(&input);
+		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_partial_chunk() {
 		let input = [3u8; 40]; // One full chunk plus 8 bytes
-		let result = <PoseidonHasher as Hasher>::hash(&input);
-		assert_eq!(result.0.len(), 32);
+		let result = PoseidonHasher::hash_padded(&input);
+		assert_eq!(result.len(), 32);
 	}
 
 	// #[test]
@@ -288,18 +270,18 @@ mod tests {
 	//     // Replace these with actual known input/output pairs for your implementation
 	//     let input =
 	// decode("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20").unwrap();     let
-	// result = <PoseidonHasher as Hasher>::hash(&input);     assert_eq!(result.0.len(), 32);
+	// result = PoseidonHasher::hash_padded(&input);     assert_eq!(result.0.len(), 32);
 	// }
 
 	#[test]
 	fn test_consistency() {
 		let input = [4u8; 50];
 		let iterations = 100;
-		let current_hash = <PoseidonHasher as Hasher>::hash(&input); // Compute the first hash
+		let current_hash = PoseidonHasher::hash_padded(&input); // Compute the first hash
 
 		for _ in 0..iterations {
-			let hash1 = <PoseidonHasher as Hasher>::hash((&current_hash).as_ref());
-			let current_hash = <PoseidonHasher as Hasher>::hash((&current_hash).as_ref());
+			let hash1 = PoseidonHasher::hash_padded((&current_hash).as_ref());
+			let current_hash = PoseidonHasher::hash_padded((&current_hash).as_ref());
 			assert_eq!(hash1, current_hash, "Hash function should be deterministic");
 		}
 	}
@@ -308,8 +290,8 @@ mod tests {
 	fn test_different_inputs() {
 		let input1 = [5u8; 32];
 		let input2 = [6u8; 32];
-		let hash1 = <PoseidonHasher as Hasher>::hash(&input1);
-		let hash2 = <PoseidonHasher as Hasher>::hash(&input2);
+		let hash1 = PoseidonHasher::hash_padded(&input1);
+		let hash2 = PoseidonHasher::hash_padded(&input2);
 		assert_ne!(hash1, hash2, "Different inputs should produce different hashes");
 	}
 
@@ -319,12 +301,11 @@ mod tests {
 		for size in 1..=128 {
 			// Create a predictable input: repeating byte value based on size
 			let input: Vec<u8> = (0..size).map(|i| (i * i % 256) as u8).collect();
-			let hash = <PoseidonHasher as Hasher>::hash(&input);
-			println!("Size {}: {:?}", size, hash);
+			let hash = PoseidonHasher::hash_padded(&input);
 
 			// Assertions
 			assert_eq!(
-				hash.as_bytes().len(),
+				hash.as_slice().len(),
 				32,
 				"Input size {} should produce 32-byte H256",
 				size
@@ -336,7 +317,7 @@ mod tests {
 	fn test_big_preimage() {
 		for overflow in 1..=200 {
 			let preimage = GoldilocksField::ORDER + overflow;
-			let _hash = <PoseidonHasher as Hasher>::hash(preimage.to_le_bytes().as_ref());
+			let _hash = PoseidonHasher::hash_padded(preimage.to_le_bytes().as_ref());
 		}
 	}
 
@@ -344,8 +325,8 @@ mod tests {
 	fn test_circuit_preimage() {
 		let preimage =
 			hex::decode("afd8e7530b95ee5ebab950c9a0c62fae1e80463687b3982233028e914f8ec7cc");
-		let hash = <PoseidonHasher as Hasher>::hash(&*preimage.unwrap());
-		let _hash = <PoseidonHasher as Hasher>::hash(hash.as_bytes());
+		let hash = PoseidonHasher::hash_padded(&*preimage.unwrap());
+		let _hash = PoseidonHasher::hash_padded(hash.as_slice());
 	}
 
 	#[test]
@@ -364,9 +345,8 @@ mod tests {
 
 		for hex_string in hex_strings.iter() {
 			let preimage = hex::decode(hex_string).unwrap();
-			println!("input: {}", hex_string);
-			let hash = <PoseidonHasher as Hasher>::hash(&preimage);
-			let _hash2 = <PoseidonHasher as Hasher>::hash(&hash.as_bytes());
+			let hash = PoseidonHasher::hash_padded(&preimage);
+			let _hash2 = PoseidonHasher::hash_padded(&hash.as_slice());
 		}
 	}
 
@@ -390,9 +370,9 @@ mod tests {
 			),
 		];
 		for (input, expected_hex) in vectors.iter() {
-			let hash = <PoseidonHasher as Hasher>::hash(input);
+			let hash = PoseidonHasher::hash_padded(input);
 			assert_eq!(
-				hex::encode(hash.as_bytes()),
+				hex::encode(hash.as_slice()),
 				*expected_hex,
 				"input: 0x{}",
 				hex::encode(input)
