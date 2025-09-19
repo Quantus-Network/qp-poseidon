@@ -1,39 +1,24 @@
-[package]
-name = "qp-poseidon"
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/substrate",
+]
+
+[workspace.package]
 version = "0.9.1"
-description = "Poseidon hash implementation for Substrate/Polkadot ecosystem using plonky2 field arithmetic"
-readme = "README.md"
-license = "MIT-0"
 authors = ["Quantus Network Developers <hello@quantus.com>"]
 homepage = "https://quantus.com"
 repository = "https://github.com/Quantus-Network/qp-poseidon"
+license = "MIT-0"
 edition = "2021"
-keywords = [
-	"cryptography",
-	"hash-functions",
-	"poseidon",
-	"quantus-network",
-	"substrate",
-]
-categories = ["cryptography"]
 
-[dependencies]
+[workspace.dependencies]
+qp-plonky2 = { version = "1.1.0", default-features = false, features = ["no_random"] }
 log = { version = "0.4.22", default-features = false }
 scale-info = { version = "2.11.1", default-features = false, features = ["derive"] }
 codec = { version = "3.7.5", default-features = false, package = "parity-scale-codec" }
-serde = { version = "1.0.217", default-features = false, optional = true }
-qp-plonky2 = { version = "1.1.0", default-features = false, features = [
-	"no_random",
-] }
-
-[dev-dependencies]
+serde = { version = "1.0.217", default-features = false }
 hex = "0.4.3"
 env_logger = "0.11.8"
 ctor = "0.5.0"
-
-[features]
-serde = [
-	"codec/serde",
-	"dep:serde",
-	"scale-info/serde",
-]

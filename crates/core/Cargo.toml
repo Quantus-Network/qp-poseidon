@@ -1,0 +1,27 @@
+[package]
+name = "qp-poseidon-core"
+version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+description = "Pure Poseidon hash implementation using plonky2 field arithmetic - no Substrate dependencies"
+keywords = [
+    "cryptography",
+    "hash-functions",
+    "poseidon",
+    "quantus-network",
+    "no-std",
+]
+categories = ["cryptography", "no-std"]
+
+[dependencies]
+qp-plonky2.workspace = true
+
+[dev-dependencies]
+hex.workspace = true
+
+[features]
+default = []
+std = []

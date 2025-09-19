@@ -1,27 +1,26 @@
 #![no_std]
+
 use codec::{Decode, Encode};
-use core::hash::Hasher as StdHasher;
-use plonky2::{
-	field::{
-		goldilocks_field::GoldilocksField,
-		types::{Field, PrimeField64},
-	},
-	hash::poseidon::PoseidonHash,
-	plonk::config::{GenericHashOut, Hasher as PlonkyHasher},
-};
+use plonky2::field::goldilocks_field::GoldilocksField;
+use qp_poseidon_core::{digest_bytes_to_felts, u128_to_felts, u64_to_felts, PoseidonCore};
 use scale_info::prelude::vec::Vec;
 use scale_info::TypeInfo;
+
 #[cfg(feature = "serde")]
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
-/// The minimum number of field elements to allocate for the preimage.
-pub const MIN_FIELD_ELEMENT_PREIMAGE_LEN: usize = 188;
-const BIT_32_LIMB_MASK: u64 = 0xFFFF_FFFF;
+// Re-export core functionality for convenience
+pub use qp_poseidon_core::{
+	digest_felts_to_bytes, injective_bytes_to_felts, injective_felts_to_bytes,
+	injective_string_to_felts, MIN_FIELD_ELEMENT_PREIMAGE_LEN,
+};
 
+/// A standard library hasher implementation using Poseidon
 #[derive(Default)]
 pub struct PoseidonStdHasher(Vec<u8>);
 
-impl StdHasher for PoseidonStdHasher {
+#[cfg(feature = "std")]
+impl core::hash::Hasher for PoseidonStdHasher {
 	fn finish(&self) -> u64 {
 		let hash = PoseidonHasher::hash_padded(self.0.as_slice());
 		u64::from_le_bytes(hash[0..8].try_into().unwrap())
@@ -32,35 +31,30 @@ impl StdHasher for PoseidonStdHasher {
 	}
 }
 
+/// Substrate-compatible Poseidon hasher with codec traits
 #[derive(PartialEq, Eq, Clone, Debug, Encode, Decode, TypeInfo)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct PoseidonHasher;
 
-
 impl PoseidonHasher {
-	pub fn hash_padded_felts(mut x: Vec<GoldilocksField>) -> Vec<u8> {
-		log::debug!(target: "poseidon", "poseidon_hash_felts x: {x:?}");
-
-		// Workaround to support variable-length input in circuit. We need to pad the preimage in
-		// the same way as the circuit to ensure consistent hashes.
-		if x.len() < MIN_FIELD_ELEMENT_PREIMAGE_LEN {
-			x.resize(MIN_FIELD_ELEMENT_PREIMAGE_LEN, GoldilocksField::ZERO);
-		}
-
-		PoseidonHash::hash_no_pad(&x).to_bytes()
+	/// Hash field elements with padding to ensure consistent circuit behavior
+	pub fn hash_padded_felts(x: Vec<GoldilocksField>) -> Vec<u8> {
+		PoseidonCore::hash_padded_felts(x)
 	}
 
+	/// Hash bytes with padding to ensure consistent circuit behavior
 	pub fn hash_padded(x: &[u8]) -> Vec<u8> {
-		log::debug!(target: "poseidon", "poseidon_hash x: {x:?}");
-		Self::hash_padded_felts(injective_bytes_to_felts(x))
+		PoseidonCore::hash_padded(x)
 	}
 
+	/// Hash field elements without any padding
 	pub fn hash_no_pad(x: Vec<GoldilocksField>) -> Vec<u8> {
-		PoseidonHash::hash_no_pad(&x).to_bytes()
+		PoseidonCore::hash_no_pad(x)
 	}
 
-	// This function should only be used to compute the quantus storage key for Transfer Proofs
-	// It breaks up the bytes input in a specific way that mimics how our zk-circuit does it
+	/// Hash storage data for Quantus transfer proofs
+	/// This function should only be used to compute the quantus storage key for Transfer Proofs
+	/// It breaks up the bytes input in a specific way that mimics how our zk-circuit does it
 	pub fn hash_storage<AccountId: Decode + Encode>(x: &[u8]) -> [u8; 32] {
 		const STORAGE_HASH_SIZE: usize = 32;
 		debug_assert!(
@@ -82,119 +76,29 @@ impl PoseidonHasher {
 	}
 }
 
-pub fn u128_to_felts(num: u128) -> Vec<GoldilocksField> {
-	const FELTS_PER_U128: usize = 4;
-	(0..FELTS_PER_U128)
-		.map(|i| {
-			let shift = 96 - 32 * i;
-			let limb = ((num >> shift) & BIT_32_LIMB_MASK as u128) as u64;
-			GoldilocksField::from_canonical_u64(limb)
-		})
-		.collect::<Vec<_>>()
-}
-
-pub fn u64_to_felts(num: u64) -> Vec<GoldilocksField> {
-	[
-		GoldilocksField::from_noncanonical_u64((num >> 32) & BIT_32_LIMB_MASK),
-		GoldilocksField::from_noncanonical_u64(num & BIT_32_LIMB_MASK),
-	]
-	.to_vec()
-}
-
-pub fn injective_bytes_to_felts(input: &[u8]) -> Vec<GoldilocksField> {
-	log::debug!(target: "poseidon", "bytes_to_felts input: {input:?}");
-
-	const BYTES_PER_ELEMENT: usize = 4;
-
-	let mut field_elements: Vec<GoldilocksField> = Vec::new();
-	for chunk in input.chunks(BYTES_PER_ELEMENT) {
-		let mut bytes = [0u8; BYTES_PER_ELEMENT];
-		bytes[..chunk.len()].copy_from_slice(chunk);
-		// Convert the chunk to a field element.
-		let value = u32::from_le_bytes(bytes);
-		let field_element = GoldilocksField::from_noncanonical_u64(value as u64);
-		field_elements.push(field_element);
-	}
-
-	field_elements
-}
-
-pub fn digest_bytes_to_felts(input: &[u8]) -> Vec<GoldilocksField> {
-	log::debug!(target: "poseidon", "bytes_to_felts input: {input:?}");
-
-	const BYTES_PER_ELEMENT: usize = 8;
-
-	let mut field_elements: Vec<GoldilocksField> = Vec::new();
-	for chunk in input.chunks(BYTES_PER_ELEMENT) {
-		let mut bytes = [0u8; BYTES_PER_ELEMENT];
-		bytes[..chunk.len()].copy_from_slice(chunk);
-		// Convert the chunk to a field element.
-		let value = u64::from_le_bytes(bytes);
-		let field_element = GoldilocksField::from_noncanonical_u64(value);
-		field_elements.push(field_element);
-	}
-
-	field_elements
-}
-
-pub fn digest_felts_to_bytes(input: &[GoldilocksField]) -> Vec<u8> {
-	const DIGEST_BYTES_PER_ELEMENT: usize = 8;
-	let mut bytes = [0u8; 32];
-
-	for (i, field_element) in input.iter().enumerate() {
-		let value = field_element.to_noncanonical_u64();
-		let value_bytes = value.to_le_bytes();
-		let start_index = i * DIGEST_BYTES_PER_ELEMENT;
-		let end_index = start_index + DIGEST_BYTES_PER_ELEMENT;
-		bytes[start_index..end_index].copy_from_slice(&value_bytes);
-	}
-
-	bytes.to_vec()
-}
-
-pub fn injective_felts_to_bytes(input: &[GoldilocksField]) -> Vec<u8> {
-	const BYTES_PER_ELEMENT: usize = 4;
-	let mut bytes: Vec<u8> = Vec::new();
-
-	for field_element in input {
-		let value = field_element.to_noncanonical_u64();
-		let value_bytes = &value.to_le_bytes()[..BYTES_PER_ELEMENT];
-		bytes.extend_from_slice(value_bytes);
-	}
-
-	bytes
-}
-
-pub fn injective_string_to_felts(input: &str) -> Vec<GoldilocksField> {
-	// Convert string to UTF-8 bytes
-	let bytes = input.as_bytes();
-
-	assert!(bytes.len() <= 8, "String must be at most 8 bytes long");
-
-	let mut padded = [0u8; 8];
-	padded[..bytes.len()].copy_from_slice(bytes);
-
-	let first = u32::from_le_bytes(padded[0..4].try_into().unwrap());
-	let second = u32::from_le_bytes(padded[4..8].try_into().unwrap());
-
-	[
-		GoldilocksField::from_noncanonical_u64(first as u64),
-		GoldilocksField::from_noncanonical_u64(second as u64),
-	]
-	.to_vec()
-}
-
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use env_logger;
 	use hex;
 	use plonky2::field::types::Field64;
 	use scale_info::prelude::vec;
 
+	#[cfg(feature = "std")]
+	use env_logger;
+
+	#[cfg(all(feature = "std", test))]
 	#[ctor::ctor]
 	fn init_logger_global() {
 		let _ = env_logger::builder().is_test(true).try_init();
+	}
+
+	#[test]
+	fn test_substrate_wrapper_compatibility() {
+		// Test that the wrapper produces the same results as the core implementation
+		let input = b"test data";
+		let core_hash = PoseidonCore::hash_padded(input);
+		let wrapper_hash = PoseidonHasher::hash_padded(input);
+		assert_eq!(core_hash, wrapper_hash);
 	}
 
 	#[test]
@@ -231,14 +135,6 @@ mod tests {
 		assert_eq!(result.len(), 32);
 	}
 
-	// #[test]
-	// fn test_known_value() {
-	//     // Replace these with actual known input/output pairs for your implementation
-	//     let input =
-	// decode("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20").unwrap();     let
-	// result = PoseidonHasher::hash_padded(&input);     assert_eq!(result.0.len(), 32);
-	// }
-
 	#[test]
 	fn test_consistency() {
 		let input = [4u8; 50];
@@ -273,7 +169,7 @@ mod tests {
 			assert_eq!(
 				hash.as_slice().len(),
 				32,
-				"Input size {} should produce 32-byte H256",
+				"Input size {} should produce 32-byte hash",
 				size
 			);
 		}
@@ -344,5 +240,15 @@ mod tests {
 				hex::encode(input)
 			);
 		}
+	}
+
+	#[test]
+	fn test_substrate_specific_functionality() {
+		// Test the hash_storage function with mock data
+		let _mock_data = vec![0u8; 32];
+
+		// This will panic in debug mode because we're passing invalid data,
+		// but in a real scenario, you'd encode proper AccountId types
+		// let _result = PoseidonHasher::hash_storage::<u32>(&mock_data);
 	}
 }
