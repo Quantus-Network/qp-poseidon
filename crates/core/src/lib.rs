@@ -131,6 +131,28 @@ impl Poseidon2Core {
 	pub fn hash_no_pad_bytes(&self, x: &[u8]) -> [u8; 32] {
 		self.hash_no_pad(injective_bytes_to_felts(x))
 	}
+
+	/// Hash with 512-bit output by hashing input, then hashing the result, and concatenating both
+	pub fn hash_512(&self, x: &[u8]) -> [u8; 64] {
+		let first_hash = self.hash_padded(x);
+		let second_hash = self.hash_padded(&first_hash);
+
+		let mut result = [0u8; 64];
+		result[0..32].copy_from_slice(&first_hash);
+		result[32..64].copy_from_slice(&second_hash);
+		result
+	}
+
+	/// Hash field elements with 512-bit output
+	pub fn hash_512_felts(&self, x: Vec<Goldilocks>) -> [u8; 64] {
+		let first_hash = self.hash_padded_felts(x);
+		let second_hash = self.hash_padded(&first_hash);
+
+		let mut result = [0u8; 64];
+		result[0..32].copy_from_slice(&first_hash);
+		result[32..64].copy_from_slice(&second_hash);
+		result
+	}
 }
 
 /// Convert a u128 to field elements using 32-bit limbs
@@ -407,5 +429,46 @@ mod tests {
 		let hash1 = hasher1.hash_padded(input);
 		let hash2 = hasher2.hash_padded(input);
 		assert_eq!(hash1, hash2, "Deterministic seed should produce consistent results");
+	}
+
+	#[test]
+	fn test_hash_512() {
+		let hasher = Poseidon2Core::new();
+		let input = b"test 512-bit hash";
+		let hash512 = hasher.hash_512(input);
+
+		// Should be exactly 64 bytes
+		assert_eq!(hash512.len(), 64);
+
+		// First 32 bytes should be hash of input
+		let expected_first = hasher.hash_padded(input);
+		assert_eq!(&hash512[0..32], &expected_first);
+
+		// Second 32 bytes should be hash of first hash
+		let expected_second = hasher.hash_padded(&expected_first);
+		assert_eq!(&hash512[32..64], &expected_second);
+
+		// Test deterministic
+		let hash512_2 = hasher.hash_512(input);
+		assert_eq!(hash512, hash512_2);
+
+		// Different inputs should produce different outputs
+		let different_hash = hasher.hash_512(b"different input");
+		assert_ne!(hash512, different_hash);
+	}
+
+	#[test]
+	fn test_hash_512_felts() {
+		let hasher = Poseidon2Core::new();
+		let felts =
+			vec![Goldilocks::from_int(123), Goldilocks::from_int(456), Goldilocks::from_int(789)];
+		let hash512 = hasher.hash_512_felts(felts.clone());
+
+		// Should be exactly 64 bytes
+		assert_eq!(hash512.len(), 64);
+
+		// Should be deterministic
+		let hash512_2 = hasher.hash_512_felts(felts);
+		assert_eq!(hash512, hash512_2);
 	}
 }
