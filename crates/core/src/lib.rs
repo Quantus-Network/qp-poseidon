@@ -46,7 +46,7 @@ impl Poseidon2Core {
 	}
 
 	/// Hash field elements with padding to ensure consistent circuit behavior
-	pub fn hash_padded_felts(&self, mut x: Vec<Goldilocks>) -> Vec<u8> {
+	pub fn hash_padded_felts(&self, mut x: Vec<Goldilocks>) -> [u8; 32] {
 		// Workaround to support variable-length input in circuit. We need to pad the preimage in
 		// the same way as the circuit to ensure consistent hashes.
 		if x.len() < MIN_FIELD_ELEMENT_PREIMAGE_LEN {
@@ -78,21 +78,22 @@ impl Poseidon2Core {
 		}
 
 		// Convert first 4 field elements to bytes (32 bytes total)
-		let mut bytes = Vec::new();
+		let mut bytes = [0u8; 32];
 		for i in 0..4 {
 			let val = result[i].as_canonical_u64();
-			bytes.extend_from_slice(&val.to_le_bytes());
+			let val_bytes = val.to_le_bytes();
+			bytes[i * 8..(i + 1) * 8].copy_from_slice(&val_bytes);
 		}
 		bytes
 	}
 
 	/// Hash bytes with padding to ensure consistent circuit behavior
-	pub fn hash_padded(&self, x: &[u8]) -> Vec<u8> {
+	pub fn hash_padded(&self, x: &[u8]) -> [u8; 32] {
 		self.hash_padded_felts(injective_bytes_to_felts(x))
 	}
 
 	/// Hash field elements without any padding
-	pub fn hash_no_pad(&self, x: Vec<Goldilocks>) -> Vec<u8> {
+	pub fn hash_no_pad(&self, x: Vec<Goldilocks>) -> [u8; 32] {
 		const CHUNK_SIZE: usize = 12;
 
 		// Process in chunks without padding
@@ -117,16 +118,17 @@ impl Poseidon2Core {
 		}
 
 		// Convert first 4 field elements to bytes (32 bytes total)
-		let mut bytes = Vec::new();
+		let mut bytes = [0u8; 32];
 		for i in 0..4 {
 			let val = result[i].as_canonical_u64();
-			bytes.extend_from_slice(&val.to_le_bytes());
+			let val_bytes = val.to_le_bytes();
+			bytes[i * 8..(i + 1) * 8].copy_from_slice(&val_bytes);
 		}
 		bytes
 	}
 
 	/// Hash bytes without any padding
-	pub fn hash_no_pad_bytes(&self, x: &[u8]) -> Vec<u8> {
+	pub fn hash_no_pad_bytes(&self, x: &[u8]) -> [u8; 32] {
 		self.hash_no_pad(injective_bytes_to_felts(x))
 	}
 }

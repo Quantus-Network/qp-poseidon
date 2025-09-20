@@ -38,19 +38,19 @@ pub struct PoseidonHasher;
 
 impl PoseidonHasher {
 	/// Hash field elements with padding to ensure consistent circuit behavior
-	pub fn hash_padded_felts(x: Vec<Goldilocks>) -> Vec<u8> {
+	pub fn hash_padded_felts(x: Vec<Goldilocks>) -> [u8; 32] {
 		let hasher = Poseidon2Core::new();
 		hasher.hash_padded_felts(x)
 	}
 
 	/// Hash bytes with padding to ensure consistent circuit behavior
-	pub fn hash_padded(x: &[u8]) -> Vec<u8> {
+	pub fn hash_padded(x: &[u8]) -> [u8; 32] {
 		let hasher = Poseidon2Core::new();
 		hasher.hash_padded(x)
 	}
 
 	/// Hash field elements without any padding
-	pub fn hash_no_pad(x: Vec<Goldilocks>) -> Vec<u8> {
+	pub fn hash_no_pad(x: Vec<Goldilocks>) -> [u8; 32] {
 		let hasher = Poseidon2Core::new();
 		hasher.hash_no_pad(x)
 	}
@@ -75,7 +75,7 @@ impl PoseidonHasher {
 		felts.extend(digest_bytes_to_felts(&to_account.encode()));
 		felts.extend(u128_to_felts(amount));
 		let hash = PoseidonHasher::hash_no_pad(felts);
-		hash.as_slice()[0..32].try_into().expect("already asserted input length. qed")
+		hash
 	}
 }
 
