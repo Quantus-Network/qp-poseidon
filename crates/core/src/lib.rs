@@ -12,11 +12,16 @@ use rand::rngs::SmallRng;
 use rand::SeedableRng;
 
 /// The minimum number of field elements to allocate for the preimage.
-pub const MIN_FIELD_ELEMENT_PREIMAGE_LEN: usize = 188;
+pub const MIN_FIELD_ELEMENT_PREIMAGE_LEN: usize = 189;
 const BIT_32_LIMB_MASK: u64 = 0xFFFF_FFFF;
 
 /// Fixed seed for deterministic constant generation
 const POSEIDON2_SEED: u64 = 0x189189189189189;
+
+// 4 felt output => 4 felt rate per round => capacity = 12 - 4 = 8
+// => 256 bits of classical preimage security => 128 bits of quantum preimage security
+const WIDTH: usize = 12;
+const RATE: usize = 4;
 
 /// Core Poseidon2 hasher implementation that holds an initialized instance
 #[derive(Clone)]
@@ -45,46 +50,19 @@ impl Poseidon2Core {
 		Self { poseidon2 }
 	}
 
+	/// TODO: Explicitly test edge cases here
 	/// Hash field elements with padding to ensure consistent circuit behavior
 	pub fn hash_padded_felts(&self, mut x: Vec<Goldilocks>) -> [u8; 32] {
 		// Workaround to support variable-length input in circuit. We need to pad the preimage in
 		// the same way as the circuit to ensure consistent hashes.
-		if x.len() < MIN_FIELD_ELEMENT_PREIMAGE_LEN {
+		let len = x.len();
+		// length-prefix for injectivity ([0] and [0,0] should be distinct)
+		x.insert(0, Goldilocks::from_int(len));
+		if len < MIN_FIELD_ELEMENT_PREIMAGE_LEN {
 			x.resize(MIN_FIELD_ELEMENT_PREIMAGE_LEN, Goldilocks::ZERO);
 		}
 
-		// We need to use a fixed width for Poseidon2. Let's use 12 elements at a time.
-		const CHUNK_SIZE: usize = 12;
-
-		// Process in chunks
-		let mut result = [Goldilocks::ZERO; CHUNK_SIZE];
-		for chunk in x.chunks(CHUNK_SIZE) {
-			let mut state = [Goldilocks::ZERO; CHUNK_SIZE];
-
-			// Copy chunk data into state
-			for (i, &elem) in chunk.iter().enumerate() {
-				if i < CHUNK_SIZE {
-					state[i] = elem;
-				}
-			}
-
-			// XOR with previous result (chaining)
-			for i in 0..CHUNK_SIZE {
-				state[i] = state[i] + result[i];
-			}
-
-			// Apply Poseidon2 permutation
-			result = self.poseidon2.permute(state);
-		}
-
-		// Convert first 4 field elements to bytes (32 bytes total)
-		let mut bytes = [0u8; 32];
-		for i in 0..4 {
-			let val = result[i].as_canonical_u64();
-			let val_bytes = val.to_le_bytes();
-			bytes[i * 8..(i + 1) * 8].copy_from_slice(&val_bytes);
-		}
-		bytes
+		self.hash_no_pad(x)
 	}
 
 	/// Hash bytes with padding to ensure consistent circuit behavior
@@ -92,39 +70,57 @@ impl Poseidon2Core {
 		self.hash_padded_felts(injective_bytes_to_felts(x))
 	}
 
+	/// TODO: Explicitly test edge cases here ([0, 0, 0, 1] and [0, 0, 0] should be distinct)
 	/// Hash field elements without any padding
 	pub fn hash_no_pad(&self, x: Vec<Goldilocks>) -> [u8; 32] {
-		const CHUNK_SIZE: usize = 12;
+        let mut state = [Goldilocks::ZERO; WIDTH];
+        
+        // Process in chunks
+        let chunks = x.chunks(RATE);
+        let num_chunks = chunks.len();
+        let mut unpadded = false;
+        for (j, chunk) in chunks.enumerate() {
+            let mut block = [Goldilocks::ZERO; RATE];
+            if j == num_chunks - 1 {
+                if chunk.len() < RATE {
+                    block[chunk.len()] = Goldilocks::ONE;                    
+                } else {
+                    unpadded = true;
+                }
+            }
 
-		// Process in chunks without padding
-		let mut result = [Goldilocks::ZERO; CHUNK_SIZE];
-		for chunk in x.chunks(CHUNK_SIZE) {
-			let mut state = [Goldilocks::ZERO; CHUNK_SIZE];
+            for (i, &elem) in chunk.iter().enumerate() {
+                block[i] = elem;
+            }
+            
+            for i in 0..RATE {
+               	// XOR with state prefix (chaining)
+                state[i] = state[i] + block[i];
+           	}
+            
+           	// Apply Poseidon2 permutation
+           	self.poseidon2.permute_mut(&mut state);
+        }
 
-			// Copy chunk data into state
-			for (i, &elem) in chunk.iter().enumerate() {
-				if i < CHUNK_SIZE {
-					state[i] = elem;
-				}
-			}
+        if unpadded {
+            // If the last chunk was not padded, we need to append a padding block
+            let padding_block = [Goldilocks::ONE, Goldilocks::ZERO, Goldilocks::ZERO, Goldilocks::ZERO];
+            for i in 0..RATE {
+                state[i] = state[i] + padding_block[i];
+            }
+            self.poseidon2.permute_mut(&mut state);
+        }
+        
+        // Always append a padding block [0, 0, 0, 1] to cover empty input 
+        let padding_block = [Goldilocks::ZERO, Goldilocks::ZERO, Goldilocks::ZERO, Goldilocks::ONE];
+        for j in 0..RATE {
+            state[j] = state[j] + padding_block[j];
+        }
+        self.poseidon2.permute_mut(&mut state);
+        
+        let result = &state[..RATE];
 
-			// XOR with previous result (chaining)
-			for i in 0..CHUNK_SIZE {
-				state[i] = state[i] + result[i];
-			}
-
-			// Apply Poseidon2 permutation
-			result = self.poseidon2.permute(state);
-		}
-
-		// Convert first 4 field elements to bytes (32 bytes total)
-		let mut bytes = [0u8; 32];
-		for i in 0..4 {
-			let val = result[i].as_canonical_u64();
-			let val_bytes = val.to_le_bytes();
-			bytes[i * 8..(i + 1) * 8].copy_from_slice(&val_bytes);
-		}
-		bytes
+        digest_felts_to_bytes(result)
 	}
 
 	/// Hash bytes without any padding
@@ -175,18 +171,37 @@ pub fn u64_to_felts(num: u64) -> Vec<Goldilocks> {
 	]
 }
 
+/// TODO: Explicitly test edge cases here
 /// Convert bytes to field elements in an injective manner (4 bytes per element)
 pub fn injective_bytes_to_felts(input: &[u8]) -> Vec<Goldilocks> {
 	const BYTES_PER_ELEMENT: usize = 4;
 
 	let mut field_elements: Vec<Goldilocks> = Vec::new();
-	for chunk in input.chunks(BYTES_PER_ELEMENT) {
+	let chunks = input.chunks(BYTES_PER_ELEMENT);
+	let num_chunks = chunks.len();
+	let mut unpadded = false;
+	for (i, chunk) in chunks.enumerate() {
 		let mut bytes = [0u8; BYTES_PER_ELEMENT];
+
+		if i == num_chunks - 1 {
+    		if chunk.len() < BYTES_PER_ELEMENT {
+    			bytes[chunk.len()] = 1;
+    		} else {
+                unpadded = true;
+            }
+		}
+
 		bytes[..chunk.len()].copy_from_slice(chunk);
 		// Convert the chunk to a field element.
 		let value = u32::from_le_bytes(bytes);
 		let field_element = Goldilocks::from_int(value as u64);
 		field_elements.push(field_element);
+	}
+	
+	if unpadded {
+	    let value = u32::from_le_bytes([1, 0, 0, 0]);
+		let felt = Goldilocks::from_int(value as u64);
+		field_elements.push(felt);
 	}
 
 	field_elements
@@ -210,7 +225,7 @@ pub fn digest_bytes_to_felts(input: &[u8]) -> Vec<Goldilocks> {
 }
 
 /// Convert field elements back to bytes for digest operations
-pub fn digest_felts_to_bytes(input: &[Goldilocks]) -> Vec<u8> {
+pub fn digest_felts_to_bytes(input: &[Goldilocks]) -> [u8; 32] {
 	const DIGEST_BYTES_PER_ELEMENT: usize = 8;
 	let mut bytes = [0u8; 32];
 
@@ -225,7 +240,7 @@ pub fn digest_felts_to_bytes(input: &[Goldilocks]) -> Vec<u8> {
 		bytes[start_index..end_index].copy_from_slice(&value_bytes[..end_index - start_index]);
 	}
 
-	bytes.to_vec()
+	bytes
 }
 
 /// Convert field elements back to bytes in an injective manner
@@ -242,6 +257,7 @@ pub fn injective_felts_to_bytes(input: &[Goldilocks]) -> Vec<u8> {
 	bytes
 }
 
+/// TODO: Implement padding like in other cases (where do we use this??)
 /// Convert a string to field elements (up to 8 bytes)
 pub fn injective_string_to_felts(input: &str) -> Vec<Goldilocks> {
 	// Convert string to UTF-8 bytes
@@ -379,6 +395,41 @@ mod tests {
 			let preimage = hex::decode(hex_string).unwrap();
 			let hash = hasher.hash_padded(&preimage);
 			let _hash2 = hasher.hash_padded(&hash);
+		}
+	}
+
+	#[test]
+	fn test_known_value_hashes() {
+		let vectors = [
+			(vec![], "a758df330564062d57d06c081846c900347c330a891e82fabc20a8b0c7a5dec4"),
+			(vec![0u8], "0e1b4b8a3581c835b0542bd24bfc9129e91c5945e409def92255be843ae71e10"),
+			(vec![0u8, 0u8], "82dc36489059ffcde358b2a26dcc67823a505d1695beda13c945afb05556c13e"),
+			(vec![0u8, 0u8, 0u8], "6121eafdc196aea901fde407659439456d381e090d5fd84530b80619adf1ddc3"),
+			(vec![0u8, 0u8, 0u8, 0u8], "24c775ada3c6c93426d9aa4237134dac4c90bbe90f3e44b33bf9e7777ecbd944"),
+			(vec![0u8, 0u8, 0u8, 1u8], "2e97af563d4a17926bdb92a03bf9d9ad22ba9ff45eeb5cfc3d5ca7a3cadde670"),
+			(
+				vec![1u8, 2, 3, 4, 5, 6, 7, 8],
+				"a1ffa4f47c6bb6b852936bf63f7ba162562634ec119d684dbd22d2989f51a526",
+			),
+			(vec![255u8; 32], "c506702495470ef3c836649130b0939926dacd7349ce0b5cf03cd71eb0bc969d"),
+			(
+				b"hello world".to_vec(),
+				"b6412bb818c9b28f4c10b440f4f95ce359e85067e174c35a39cb33e9767af696",
+			),
+			(
+				(0u8..32).collect::<Vec<u8>>(),
+				"dcb9127c078eea24f12a4a2802cbb7cfe279f5eeb3e77eca60b6259f0f5e7179",
+			),
+		];
+		let poseidon = Poseidon2Core::new();
+		for (input, expected_hex) in vectors.iter() {
+			let hash = poseidon.hash_padded(input);
+			assert_eq!(
+				hex::encode(hash.as_slice()),
+				*expected_hex,
+				"input: 0x{}",
+				hex::encode(input)
+			);
 		}
 	}
 

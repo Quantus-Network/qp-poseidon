@@ -22,6 +22,10 @@ p3-goldilocks = { version = "0.3.0", default-features = false }
 p3-field = { version = "0.3.0", default-features = false }
 log.workspace = true
 scale-info.workspace = true
+sp-core = { version = "37.0.0", default-features = false }
+sp-runtime = { version = "42.0.0", default-features = false }
+sp-storage = { version = "22.0.0", default-features = false }
+sp-trie = { version = "40.0.0", default-features = false }
 codec.workspace = true
 serde = { workspace = true, optional = true }
 
@@ -34,9 +38,13 @@ ctor.workspace = true
 default = ["std"]
 std = [
 	"qp-poseidon-core/std",
+	"sp-core/std",
+	"sp-runtime/std",
+	"sp-storage/std",
 	"log/std",
 	"scale-info/std",
 	"codec/std",
+	"serde/std"
 ]
 serde = [
 	"codec/serde",

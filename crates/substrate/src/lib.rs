@@ -1,10 +1,11 @@
-#![no_std]
-
 use codec::{Decode, Encode};
 use p3_goldilocks::Goldilocks;
 use qp_poseidon_core::{digest_bytes_to_felts, u128_to_felts, u64_to_felts, Poseidon2Core};
 use scale_info::prelude::vec::Vec;
 use scale_info::TypeInfo;
+use sp_storage::StateVersion;
+use sp_trie::{LayoutV0, LayoutV1, TrieConfiguration};
+use sp_core::{Hasher, H256};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -35,6 +36,16 @@ impl core::hash::Hasher for PoseidonStdHasher {
 #[derive(PartialEq, Eq, Clone, Debug, Encode, Decode, TypeInfo)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct PoseidonHasher;
+
+impl Hasher for PoseidonHasher {
+	type Out = H256;
+	type StdHasher = PoseidonStdHasher;
+	const LENGTH: usize = 32;
+
+	fn hash(x: &[u8]) -> H256 {
+		H256::from_slice(&Self::hash_padded(x))
+	}
+}
 
 impl PoseidonHasher {
 	/// Hash field elements with padding to ensure consistent circuit behavior
@@ -88,6 +99,43 @@ impl PoseidonHasher {
 		felts.extend(u128_to_felts(amount));
 		let hash = PoseidonHasher::hash_no_pad(felts);
 		hash
+	}
+}
+
+impl sp_runtime::traits::Hash for PoseidonHasher {
+	type Output = H256;
+
+	fn hash(s: &[u8]) -> Self::Output {
+		H256::from_slice(&Self::hash_padded(s))
+	}
+
+	/// Produce the hash of some codec-encodable value.
+	fn hash_of<S: Encode>(s: &S) -> Self::Output {
+		Encode::using_encoded(s, <Self as Hasher>::hash)
+	}
+
+	fn ordered_trie_root(input: Vec<Vec<u8>>, state_version: StateVersion) -> Self::Output {
+		log::debug!(target: "poseidon",
+			"PoseidonHasher::ordered_trie_root input={input:?} version={state_version:?}",
+		);
+		let res = match state_version {
+			StateVersion::V0 => LayoutV0::<PoseidonHasher>::ordered_trie_root(input),
+			StateVersion::V1 => LayoutV1::<PoseidonHasher>::ordered_trie_root(input),
+		};
+		log::debug!(target: "poseidon", "PoseidonHasher::ordered_trie_root res={res:?}");
+		res
+	}
+
+	fn trie_root(input: Vec<(Vec<u8>, Vec<u8>)>, version: StateVersion) -> Self::Output {
+		log::debug!(target: "poseidon",
+			"PoseidonHasher::trie_root input={input:?} version={version:?}"
+		);
+		let res = match version {
+			StateVersion::V0 => LayoutV0::<PoseidonHasher>::trie_root(input),
+			StateVersion::V1 => LayoutV1::<PoseidonHasher>::trie_root(input),
+		};
+		log::debug!(target: "poseidon", "PoseidonHasher::trie_root res={res:?}");
+		res
 	}
 }
 
@@ -226,36 +274,6 @@ mod tests {
 			let preimage = hex::decode(hex_string).unwrap();
 			let hash = PoseidonHasher::hash_padded(&preimage);
 			let _hash2 = PoseidonHasher::hash_padded(&hash.as_slice());
-		}
-	}
-
-	#[test]
-	fn test_known_value_hashes() {
-		let vectors = [
-			(vec![], "99e525ddae8e570d1291c00d68d12cd031c0e67e2adbbf051410c07b7001cde3"),
-			(vec![0u8], "99e525ddae8e570d1291c00d68d12cd031c0e67e2adbbf051410c07b7001cde3"),
-			(
-				vec![1u8, 2, 3, 4, 5, 6, 7, 8],
-				"2af3d38bd6c15042552a5167ff4131e38c884636e8d02e7e79a90ce13ee8d2cb",
-			),
-			(vec![255u8; 32], "88f70ec20e01cbbcca89f887bcf7e7d3b34b3a11894bad5e20407fe379d65e6b"),
-			(
-				b"hello world".to_vec(),
-				"63ae6f49796ae6d8ebe6d1c9efc3f41c2564342ab67728efc7c3b2bb3f921789",
-			),
-			(
-				(0u8..32).collect::<Vec<u8>>(),
-				"0a7c419d825bb7a5513be769f8460254c117efbb854967224bd46756b4d4039d",
-			),
-		];
-		for (input, expected_hex) in vectors.iter() {
-			let hash = PoseidonHasher::hash_padded(input);
-			assert_eq!(
-				hex::encode(hash.as_slice()),
-				*expected_hex,
-				"input: 0x{}",
-				hex::encode(input)
-			);
 		}
 	}
 
