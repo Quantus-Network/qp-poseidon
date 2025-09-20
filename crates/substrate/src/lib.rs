@@ -39,17 +39,20 @@ pub struct PoseidonHasher;
 impl PoseidonHasher {
 	/// Hash field elements with padding to ensure consistent circuit behavior
 	pub fn hash_padded_felts(x: Vec<Goldilocks>) -> Vec<u8> {
-		Poseidon2Core::hash_padded_felts(x)
+		let hasher = Poseidon2Core::new();
+		hasher.hash_padded_felts(x)
 	}
 
 	/// Hash bytes with padding to ensure consistent circuit behavior
 	pub fn hash_padded(x: &[u8]) -> Vec<u8> {
-		Poseidon2Core::hash_padded(x)
+		let hasher = Poseidon2Core::new();
+		hasher.hash_padded(x)
 	}
 
 	/// Hash field elements without any padding
 	pub fn hash_no_pad(x: Vec<Goldilocks>) -> Vec<u8> {
-		Poseidon2Core::hash_no_pad(x)
+		let hasher = Poseidon2Core::new();
+		hasher.hash_no_pad(x)
 	}
 
 	/// Hash storage data for Quantus transfer proofs
@@ -96,7 +99,8 @@ mod tests {
 	fn test_substrate_wrapper_compatibility() {
 		// Test that the wrapper produces the same results as the core implementation
 		let input = b"test data";
-		let core_hash = Poseidon2Core::hash_padded(input);
+		let hasher = Poseidon2Core::new();
+		let core_hash = hasher.hash_padded(input);
 		let wrapper_hash = PoseidonHasher::hash_padded(input);
 		assert_eq!(core_hash, wrapper_hash);
 	}
@@ -215,20 +219,20 @@ mod tests {
 	#[test]
 	fn test_known_value_hashes() {
 		let vectors = [
-			(vec![], "4030d5638468f9bf8d656abf2f79a894c8d677e5ae1be25492f147ce9571e136"),
-			(vec![0u8], "4030d5638468f9bf8d656abf2f79a894c8d677e5ae1be25492f147ce9571e136"),
+			(vec![], "99e525ddae8e570d1291c00d68d12cd031c0e67e2adbbf051410c07b7001cde3"),
+			(vec![0u8], "99e525ddae8e570d1291c00d68d12cd031c0e67e2adbbf051410c07b7001cde3"),
 			(
 				vec![1u8, 2, 3, 4, 5, 6, 7, 8],
-				"83b254322447a4ed8c55816b9b84faa46a8dc73ee403eae67989d25d27292c82",
+				"2af3d38bd6c15042552a5167ff4131e38c884636e8d02e7e79a90ce13ee8d2cb",
 			),
-			(vec![255u8; 32], "31d576de95c04b4db7b7750a9ad01124c905ee692bc58ee8cfc99517e0c3901a"),
+			(vec![255u8; 32], "88f70ec20e01cbbcca89f887bcf7e7d3b34b3a11894bad5e20407fe379d65e6b"),
 			(
 				b"hello world".to_vec(),
-				"ba619693b53c9245af3495e8ba2fb768a88e9b44eb75eeeb22a00a323d75b749",
+				"63ae6f49796ae6d8ebe6d1c9efc3f41c2564342ab67728efc7c3b2bb3f921789",
 			),
 			(
 				(0u8..32).collect::<Vec<u8>>(),
-				"1a1897acbb34ae0658b230c0257d48fa530bc9a68296a5ccbb84f554953c26f6",
+				"0a7c419d825bb7a5513be769f8460254c117efbb854967224bd46756b4d4039d",
 			),
 		];
 		for (input, expected_hex) in vectors.iter() {

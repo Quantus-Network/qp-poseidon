@@ -23,6 +23,7 @@ p3-field = { version = "0.3.0", default-features = false }
 p3-symmetric = { version = "0.3.0", default-features = false }
 rand = { version = "0.9", default-features = false, features = ["small_rng"] }
 
+
 [dev-dependencies]
 hex = "0.4.3"
 

@@ -16,30 +16,45 @@ pub const MIN_FIELD_ELEMENT_PREIMAGE_LEN: usize = 188;
 const BIT_32_LIMB_MASK: u64 = 0xFFFF_FFFF;
 
 /// Fixed seed for deterministic constant generation
-const POSEIDON2_SEED: u64 = 0x1234567890ABCDEF;
+const POSEIDON2_SEED: u64 = 0x189189189189189;
 
-/// Core Poseidon2 hasher implementation without any external dependencies
-#[derive(PartialEq, Eq, Clone, Debug, Default)]
-pub struct Poseidon2Core;
+/// Core Poseidon2 hasher implementation that holds an initialized instance
+#[derive(Clone)]
+pub struct Poseidon2Core {
+	poseidon2: Poseidon2Goldilocks<12>,
+}
+
+impl Default for Poseidon2Core {
+	fn default() -> Self {
+		Self::new()
+	}
+}
 
 impl Poseidon2Core {
-	/// Create a deterministic Poseidon2 instance with fixed constants
-	fn create_poseidon2_instance<const WIDTH: usize>() -> Poseidon2Goldilocks<WIDTH> {
+	/// Create a new Poseidon2Core instance with deterministic constants
+	pub fn new() -> Self {
 		let mut rng = SmallRng::seed_from_u64(POSEIDON2_SEED);
-		Poseidon2Goldilocks::<WIDTH>::new_from_rng_128(&mut rng)
+		let poseidon2 = Poseidon2Goldilocks::<12>::new_from_rng_128(&mut rng);
+		Self { poseidon2 }
+	}
+
+	/// Create a new Poseidon2Core instance with a custom seed
+	pub fn with_seed(seed: u64) -> Self {
+		let mut rng = SmallRng::seed_from_u64(seed);
+		let poseidon2 = Poseidon2Goldilocks::<12>::new_from_rng_128(&mut rng);
+		Self { poseidon2 }
 	}
 
 	/// Hash field elements with padding to ensure consistent circuit behavior
-	pub fn hash_padded_felts(mut x: Vec<Goldilocks>) -> Vec<u8> {
+	pub fn hash_padded_felts(&self, mut x: Vec<Goldilocks>) -> Vec<u8> {
 		// Workaround to support variable-length input in circuit. We need to pad the preimage in
 		// the same way as the circuit to ensure consistent hashes.
 		if x.len() < MIN_FIELD_ELEMENT_PREIMAGE_LEN {
 			x.resize(MIN_FIELD_ELEMENT_PREIMAGE_LEN, Goldilocks::ZERO);
 		}
 
-		// We need to use a fixed width for Poseidon2. Let's use 16 elements at a time.
-		const CHUNK_SIZE: usize = 16;
-		let poseidon2 = Self::create_poseidon2_instance::<CHUNK_SIZE>();
+		// We need to use a fixed width for Poseidon2. Let's use 12 elements at a time.
+		const CHUNK_SIZE: usize = 12;
 
 		// Process in chunks
 		let mut result = [Goldilocks::ZERO; CHUNK_SIZE];
@@ -59,28 +74,26 @@ impl Poseidon2Core {
 			}
 
 			// Apply Poseidon2 permutation
-			result = poseidon2.permute(state);
+			result = self.poseidon2.permute(state);
 		}
 
-		// Convert first 8 field elements to bytes (32 bytes total)
+		// Convert first 4 field elements to bytes (32 bytes total)
 		let mut bytes = Vec::new();
-		for i in 0..8.min(result.len()) {
+		for i in 0..4 {
 			let val = result[i].as_canonical_u64();
 			bytes.extend_from_slice(&val.to_le_bytes());
 		}
-		bytes.truncate(32); // Ensure exactly 32 bytes
 		bytes
 	}
 
 	/// Hash bytes with padding to ensure consistent circuit behavior
-	pub fn hash_padded(x: &[u8]) -> Vec<u8> {
-		Self::hash_padded_felts(injective_bytes_to_felts(x))
+	pub fn hash_padded(&self, x: &[u8]) -> Vec<u8> {
+		self.hash_padded_felts(injective_bytes_to_felts(x))
 	}
 
 	/// Hash field elements without any padding
-	pub fn hash_no_pad(x: Vec<Goldilocks>) -> Vec<u8> {
-		const CHUNK_SIZE: usize = 16;
-		let poseidon2 = Self::create_poseidon2_instance::<CHUNK_SIZE>();
+	pub fn hash_no_pad(&self, x: Vec<Goldilocks>) -> Vec<u8> {
+		const CHUNK_SIZE: usize = 12;
 
 		// Process in chunks without padding
 		let mut result = [Goldilocks::ZERO; CHUNK_SIZE];
@@ -100,22 +113,21 @@ impl Poseidon2Core {
 			}
 
 			// Apply Poseidon2 permutation
-			result = poseidon2.permute(state);
+			result = self.poseidon2.permute(state);
 		}
 
-		// Convert first 8 field elements to bytes (32 bytes total)
+		// Convert first 4 field elements to bytes (32 bytes total)
 		let mut bytes = Vec::new();
-		for i in 0..8.min(result.len()) {
+		for i in 0..4 {
 			let val = result[i].as_canonical_u64();
 			bytes.extend_from_slice(&val.to_le_bytes());
 		}
-		bytes.truncate(32); // Ensure exactly 32 bytes
 		bytes
 	}
 
 	/// Hash bytes without any padding
-	pub fn hash_no_pad_bytes(x: &[u8]) -> Vec<u8> {
-		Self::hash_no_pad(injective_bytes_to_felts(x))
+	pub fn hash_no_pad_bytes(&self, x: &[u8]) -> Vec<u8> {
+		self.hash_no_pad(injective_bytes_to_felts(x))
 	}
 }
 
@@ -231,67 +243,75 @@ mod tests {
 
 	#[test]
 	fn test_empty_input() {
-		let result = Poseidon2Core::hash_padded(&[]);
+		let hasher = Poseidon2Core::new();
+		let result = hasher.hash_padded(&[]);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_single_byte() {
+		let hasher = Poseidon2Core::new();
 		let input = vec![42u8];
-		let result = Poseidon2Core::hash_padded(&input);
+		let result = hasher.hash_padded(&input);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_exactly_32_bytes() {
+		let hasher = Poseidon2Core::new();
 		let input = [1u8; 32];
-		let result = Poseidon2Core::hash_padded(&input);
+		let result = hasher.hash_padded(&input);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_multiple_chunks() {
+		let hasher = Poseidon2Core::new();
 		let input = [2u8; 64]; // Two chunks
-		let result = Poseidon2Core::hash_padded(&input);
+		let result = hasher.hash_padded(&input);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_partial_chunk() {
+		let hasher = Poseidon2Core::new();
 		let input = [3u8; 40]; // One full chunk plus 8 bytes
-		let result = Poseidon2Core::hash_padded(&input);
+		let result = hasher.hash_padded(&input);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_consistency() {
+		let hasher = Poseidon2Core::new();
 		let input = [4u8; 50];
 		let iterations = 10;
-		let current_hash = Poseidon2Core::hash_padded(&input);
+		let current_hash = hasher.hash_padded(&input);
 
 		for _ in 0..iterations {
-			let hash1 = Poseidon2Core::hash_padded(&current_hash);
-			let hash2 = Poseidon2Core::hash_padded(&current_hash);
+			let hash1 = hasher.hash_padded(&current_hash);
+			let hash2 = hasher.hash_padded(&current_hash);
 			assert_eq!(hash1, hash2, "Hash function should be deterministic");
 		}
 	}
 
 	#[test]
 	fn test_different_inputs() {
+		let hasher = Poseidon2Core::new();
 		let input1 = [5u8; 32];
 		let input2 = [6u8; 32];
-		let hash1 = Poseidon2Core::hash_padded(&input1);
-		let hash2 = Poseidon2Core::hash_padded(&input2);
+		let hash1 = hasher.hash_padded(&input1);
+		let hash2 = hasher.hash_padded(&input2);
 		assert_ne!(hash1, hash2, "Different inputs should produce different hashes");
 	}
 
 	#[test]
 	fn test_poseidon2_hash_input_sizes() {
+		let hasher = Poseidon2Core::new();
 		// Test inputs from 1 to 128 bytes
 		for size in 1..=128 {
 			// Create a predictable input: repeating byte value based on size
 			let input: Vec<u8> = (0..size).map(|i| (i * i % 256) as u8).collect();
-			let hash = Poseidon2Core::hash_padded(&input);
+			let hash = hasher.hash_padded(&input);
 
 			// Assertions
 			assert_eq!(hash.len(), 32, "Input size {} should produce 32-byte hash", size);
@@ -300,18 +320,20 @@ mod tests {
 
 	#[test]
 	fn test_big_preimage() {
+		let hasher = Poseidon2Core::new();
 		for overflow in 1..=10 {
 			let preimage = (Goldilocks::ORDER_U64 + overflow).to_le_bytes();
-			let _hash = Poseidon2Core::hash_padded(&preimage);
+			let _hash = hasher.hash_padded(&preimage);
 		}
 	}
 
 	#[test]
 	fn test_circuit_preimage() {
+		let hasher = Poseidon2Core::new();
 		let preimage =
 			hex::decode("afd8e7530b95ee5ebab950c9a0c62fae1e80463687b3982233028e914f8ec7cc");
-		let hash = Poseidon2Core::hash_padded(&preimage.unwrap());
-		let _hash = Poseidon2Core::hash_padded(&hash);
+		let hash = hasher.hash_padded(&preimage.unwrap());
+		let _hash = hasher.hash_padded(&hash);
 	}
 
 	#[test]
@@ -328,10 +350,11 @@ mod tests {
 			"e5d30b9a4c2a6f81e5d30b9a4c2a6f81e5d30b9a4c2a6f81e5d30b9a4c2a6f81",
 		];
 
+		let hasher = Poseidon2Core::new();
 		for hex_string in hex_strings.iter() {
 			let preimage = hex::decode(hex_string).unwrap();
-			let hash = Poseidon2Core::hash_padded(&preimage);
-			let _hash2 = Poseidon2Core::hash_padded(&hash);
+			let hash = hasher.hash_padded(&preimage);
+			let _hash2 = hasher.hash_padded(&hash);
 		}
 	}
 
@@ -362,9 +385,10 @@ mod tests {
 
 	#[test]
 	fn test_hash_no_pad() {
+		let hasher = Poseidon2Core::new();
 		let input = b"test";
-		let padded_hash = Poseidon2Core::hash_padded(input);
-		let no_pad_hash = Poseidon2Core::hash_no_pad_bytes(input);
+		let padded_hash = hasher.hash_padded(input);
+		let no_pad_hash = hasher.hash_no_pad_bytes(input);
 
 		// These should be different since one is padded and the other isn't
 		assert_ne!(padded_hash, no_pad_hash);
@@ -375,9 +399,11 @@ mod tests {
 	#[test]
 	fn test_deterministic_constants() {
 		// Test that using the same seed produces the same results
+		let hasher1 = Poseidon2Core::new();
+		let hasher2 = Poseidon2Core::new();
 		let input = b"test deterministic";
-		let hash1 = Poseidon2Core::hash_padded(input);
-		let hash2 = Poseidon2Core::hash_padded(input);
+		let hash1 = hasher1.hash_padded(input);
+		let hash2 = hasher2.hash_padded(input);
 		assert_eq!(hash1, hash2, "Deterministic seed should produce consistent results");
 	}
 }
