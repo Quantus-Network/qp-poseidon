@@ -6,21 +6,25 @@ homepage.workspace = true
 repository.workspace = true
 license.workspace = true
 edition.workspace = true
-description = "Pure Poseidon hash implementation using plonky2 field arithmetic - no Substrate dependencies"
+description = "Pure Poseidon2 hash implementation using plonky3 field arithmetic - no Substrate dependencies"
 keywords = [
     "cryptography",
     "hash-functions",
-    "poseidon",
+    "poseidon2",
     "quantus-network",
     "no-std",
 ]
 categories = ["cryptography", "no-std"]
 
 [dependencies]
-qp-plonky2.workspace = true
+p3-goldilocks = { version = "0.3.0", default-features = false }
+p3-poseidon2 = { version = "0.3.0", default-features = false }
+p3-field = { version = "0.3.0", default-features = false }
+p3-symmetric = { version = "0.3.0", default-features = false }
+rand = { version = "0.9", default-features = false, features = ["small_rng"] }
 
 [dev-dependencies]
-hex.workspace = true
+hex = "0.4.3"
 
 [features]
 default = []

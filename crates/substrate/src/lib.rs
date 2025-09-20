@@ -1,8 +1,8 @@
 #![no_std]
 
 use codec::{Decode, Encode};
-use plonky2::field::goldilocks_field::GoldilocksField;
-use qp_poseidon_core::{digest_bytes_to_felts, u128_to_felts, u64_to_felts, PoseidonCore};
+use p3_goldilocks::Goldilocks;
+use qp_poseidon_core::{digest_bytes_to_felts, u128_to_felts, u64_to_felts, Poseidon2Core};
 use scale_info::prelude::vec::Vec;
 use scale_info::TypeInfo;
 
@@ -38,18 +38,18 @@ pub struct PoseidonHasher;
 
 impl PoseidonHasher {
 	/// Hash field elements with padding to ensure consistent circuit behavior
-	pub fn hash_padded_felts(x: Vec<GoldilocksField>) -> Vec<u8> {
-		PoseidonCore::hash_padded_felts(x)
+	pub fn hash_padded_felts(x: Vec<Goldilocks>) -> Vec<u8> {
+		Poseidon2Core::hash_padded_felts(x)
 	}
 
 	/// Hash bytes with padding to ensure consistent circuit behavior
 	pub fn hash_padded(x: &[u8]) -> Vec<u8> {
-		PoseidonCore::hash_padded(x)
+		Poseidon2Core::hash_padded(x)
 	}
 
 	/// Hash field elements without any padding
-	pub fn hash_no_pad(x: Vec<GoldilocksField>) -> Vec<u8> {
-		PoseidonCore::hash_no_pad(x)
+	pub fn hash_no_pad(x: Vec<Goldilocks>) -> Vec<u8> {
+		Poseidon2Core::hash_no_pad(x)
 	}
 
 	/// Hash storage data for Quantus transfer proofs
@@ -80,7 +80,7 @@ impl PoseidonHasher {
 mod tests {
 	use super::*;
 	use hex;
-	use plonky2::field::types::Field64;
+	use p3_field::PrimeField64;
 	use scale_info::prelude::vec;
 
 	#[cfg(feature = "std")]
@@ -96,7 +96,7 @@ mod tests {
 	fn test_substrate_wrapper_compatibility() {
 		// Test that the wrapper produces the same results as the core implementation
 		let input = b"test data";
-		let core_hash = PoseidonCore::hash_padded(input);
+		let core_hash = Poseidon2Core::hash_padded(input);
 		let wrapper_hash = PoseidonHasher::hash_padded(input);
 		assert_eq!(core_hash, wrapper_hash);
 	}
@@ -178,8 +178,8 @@ mod tests {
 	#[test]
 	fn test_big_preimage() {
 		for overflow in 1..=200 {
-			let preimage = GoldilocksField::ORDER + overflow;
-			let _hash = PoseidonHasher::hash_padded(preimage.to_le_bytes().as_ref());
+			let preimage = (Goldilocks::ORDER_U64 + overflow).to_le_bytes();
+			let _hash = PoseidonHasher::hash_padded(&preimage);
 		}
 	}
 
@@ -215,20 +215,20 @@ mod tests {
 	#[test]
 	fn test_known_value_hashes() {
 		let vectors = [
-			(vec![], "c4f1020767625056e669e3653f190b7763c6c398a45f1dc20db0d7ed32b14ff7"),
-			(vec![0u8], "c4f1020767625056e669e3653f190b7763c6c398a45f1dc20db0d7ed32b14ff7"),
+			(vec![], "4030d5638468f9bf8d656abf2f79a894c8d677e5ae1be25492f147ce9571e136"),
+			(vec![0u8], "4030d5638468f9bf8d656abf2f79a894c8d677e5ae1be25492f147ce9571e136"),
 			(
 				vec![1u8, 2, 3, 4, 5, 6, 7, 8],
-				"8058a9a0c4a7b7259f4d92edb67bb0e9ff6e73a1919bba5a87d42b403d3194b7",
+				"83b254322447a4ed8c55816b9b84faa46a8dc73ee403eae67989d25d27292c82",
 			),
-			(vec![255u8; 32], "a60e83f2ade965180e73c201e0b98c0190a9043f1226a9ff5179d82eb7cf89c4"),
+			(vec![255u8; 32], "31d576de95c04b4db7b7750a9ad01124c905ee692bc58ee8cfc99517e0c3901a"),
 			(
 				b"hello world".to_vec(),
-				"2411b11963c8d02338a9b30199b16db61933f81169f628b4288f6bf63beaa152",
+				"ba619693b53c9245af3495e8ba2fb768a88e9b44eb75eeeb22a00a323d75b749",
 			),
 			(
 				(0u8..32).collect::<Vec<u8>>(),
-				"d43069a7fd879ddb3370ab36b174c873fc7413e92d252bef75389dc824cc7dd2",
+				"1a1897acbb34ae0658b230c0257d48fa530bc9a68296a5ccbb84f554953c26f6",
 			),
 		];
 		for (input, expected_hex) in vectors.iter() {

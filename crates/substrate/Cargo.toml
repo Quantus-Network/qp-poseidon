@@ -18,7 +18,8 @@ categories = ["cryptography"]
 
 [dependencies]
 qp-poseidon-core = { path = "../core", default-features = false }
-qp-plonky2.workspace = true
+p3-goldilocks = { version = "0.3.0", default-features = false }
+p3-field = { version = "0.3.0", default-features = false }
 log.workspace = true
 scale-info.workspace = true
 codec.workspace = true
