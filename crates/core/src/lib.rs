@@ -6,7 +6,6 @@ use alloc::{vec, vec::Vec};
 use p3_field::{integers::QuotientMap, PrimeCharacteristicRing, PrimeField64};
 use p3_goldilocks::{Goldilocks, Poseidon2Goldilocks};
 use p3_symmetric::Permutation;
-use rand::Rng;
 use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 
 /// The minimum number of field elements to allocate for the preimage.
