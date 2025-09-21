@@ -1,7 +1,20 @@
+extern crate alloc;
+
+use alloc::vec::Vec;
 use codec::{Decode, Encode};
 use p3_goldilocks::Goldilocks;
 use qp_poseidon_core::{digest_bytes_to_felts, u128_to_felts, u64_to_felts, Poseidon2Core};
-use scale_info::{prelude::vec::Vec, TypeInfo};
+// use scale_info::{TypeInfo};
+use core::{
+	clone::Clone,
+	cmp::{Eq, PartialEq},
+	convert::TryInto,
+	debug_assert,
+	default::Default,
+	fmt::Debug,
+	iter::Extend,
+	prelude::rust_2024::derive,
+};
 use sp_core::{Hasher, H256};
 use sp_storage::StateVersion;
 use sp_trie::{LayoutV0, LayoutV1, TrieConfiguration};
@@ -19,7 +32,7 @@ pub use qp_poseidon_core::{
 #[derive(Default)]
 pub struct PoseidonStdHasher(Vec<u8>);
 
-#[cfg(feature = "std")]
+// #[cfg(feature = "std")]
 impl core::hash::Hasher for PoseidonStdHasher {
 	fn finish(&self) -> u64 {
 		let hash = PoseidonHasher::hash_padded(self.0.as_slice());
@@ -32,7 +45,7 @@ impl core::hash::Hasher for PoseidonStdHasher {
 }
 
 /// Substrate-compatible Poseidon hasher with codec traits
-#[derive(PartialEq, Eq, Clone, Debug, Encode, Decode, TypeInfo)]
+#[derive(PartialEq, Eq, Clone, Debug, Encode, Decode)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct PoseidonHasher;
 

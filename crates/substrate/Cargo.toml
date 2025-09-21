@@ -37,7 +37,6 @@ ctor.workspace = true
 [features]
 default = ["std"]
 std = [
-	"qp-poseidon-core/std",
 	"sp-core/std",
 	"sp-runtime/std",
 	"sp-storage/std",
