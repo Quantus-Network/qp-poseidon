@@ -8,11 +8,11 @@ license.workspace = true
 edition.workspace = true
 description = "Pure Poseidon2 hash implementation using plonky3 field arithmetic - no Substrate dependencies"
 keywords = [
-    "cryptography",
-    "hash-functions",
-    "poseidon2",
-    "quantus-network",
-    "no-std",
+	"cryptography",
+	"hash-functions",
+	"no-std",
+	"poseidon2",
+	"quantus-network",
 ]
 categories = ["cryptography", "no-std"]
 

@@ -37,13 +37,13 @@ ctor.workspace = true
 [features]
 default = ["std"]
 std = [
+	"codec/std",
+	"log/std",
+	"scale-info/std",
+	"serde/std",
 	"sp-core/std",
 	"sp-runtime/std",
 	"sp-storage/std",
-	"log/std",
-	"scale-info/std",
-	"codec/std",
-	"serde/std"
 ]
 serde = [
 	"codec/serde",
