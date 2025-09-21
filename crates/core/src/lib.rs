@@ -2,14 +2,11 @@
 
 extern crate alloc;
 
-use alloc::vec;
-use alloc::vec::Vec;
-use p3_field::integers::QuotientMap;
-use p3_field::{PrimeCharacteristicRing, PrimeField64};
+use alloc::{vec, vec::Vec};
+use p3_field::{integers::QuotientMap, PrimeCharacteristicRing, PrimeField64};
 use p3_goldilocks::{Goldilocks, Poseidon2Goldilocks};
 use p3_symmetric::Permutation;
-use rand::rngs::SmallRng;
-use rand::SeedableRng;
+use rand::{rngs::SmallRng, SeedableRng};
 
 /// The minimum number of field elements to allocate for the preimage.
 pub const MIN_FIELD_ELEMENT_PREIMAGE_LEN: usize = 189;
@@ -73,54 +70,55 @@ impl Poseidon2Core {
 	/// TODO: Explicitly test edge cases here ([0, 0, 0, 1] and [0, 0, 0] should be distinct)
 	/// Hash field elements without any padding
 	pub fn hash_no_pad(&self, x: Vec<Goldilocks>) -> [u8; 32] {
-        let mut state = [Goldilocks::ZERO; WIDTH];
-        
-        // Process in chunks
-        let chunks = x.chunks(RATE);
-        let num_chunks = chunks.len();
-        let mut unpadded = false;
-        for (j, chunk) in chunks.enumerate() {
-            let mut block = [Goldilocks::ZERO; RATE];
-            if j == num_chunks - 1 {
-                if chunk.len() < RATE {
-                    block[chunk.len()] = Goldilocks::ONE;                    
-                } else {
-                    unpadded = true;
-                }
-            }
+		let mut state = [Goldilocks::ZERO; WIDTH];
 
-            for (i, &elem) in chunk.iter().enumerate() {
-                block[i] = elem;
-            }
-            
-            for i in 0..RATE {
-               	// XOR with state prefix (chaining)
-                state[i] = state[i] + block[i];
-           	}
-            
-           	// Apply Poseidon2 permutation
-           	self.poseidon2.permute_mut(&mut state);
-        }
+		// Process in chunks
+		let chunks = x.chunks(RATE);
+		let num_chunks = chunks.len();
+		let mut unpadded = false;
+		for (j, chunk) in chunks.enumerate() {
+			let mut block = [Goldilocks::ZERO; RATE];
+			if j == num_chunks - 1 {
+				if chunk.len() < RATE {
+					block[chunk.len()] = Goldilocks::ONE;
+				} else {
+					unpadded = true;
+				}
+			}
 
-        if unpadded {
-            // If the last chunk was not padded, we need to append a padding block
-            let padding_block = [Goldilocks::ONE, Goldilocks::ZERO, Goldilocks::ZERO, Goldilocks::ZERO];
-            for i in 0..RATE {
-                state[i] = state[i] + padding_block[i];
-            }
-            self.poseidon2.permute_mut(&mut state);
-        }
-        
-        // Always append a padding block [0, 0, 0, 1] to cover empty input 
-        let padding_block = [Goldilocks::ZERO, Goldilocks::ZERO, Goldilocks::ZERO, Goldilocks::ONE];
-        for j in 0..RATE {
-            state[j] = state[j] + padding_block[j];
-        }
-        self.poseidon2.permute_mut(&mut state);
-        
-        let result = &state[..RATE];
+			for (i, &elem) in chunk.iter().enumerate() {
+				block[i] = elem;
+			}
 
-        digest_felts_to_bytes(result)
+			for i in 0..RATE {
+				// XOR with state prefix (chaining)
+				state[i] = state[i] + block[i];
+			}
+
+			// Apply Poseidon2 permutation
+			self.poseidon2.permute_mut(&mut state);
+		}
+
+		if unpadded {
+			// If the last chunk was not padded, we need to append a padding block
+			let padding_block =
+				[Goldilocks::ONE, Goldilocks::ZERO, Goldilocks::ZERO, Goldilocks::ZERO];
+			for i in 0..RATE {
+				state[i] = state[i] + padding_block[i];
+			}
+			self.poseidon2.permute_mut(&mut state);
+		}
+
+		// Always append a padding block [0, 0, 0, 1] to cover empty input
+		let padding_block = [Goldilocks::ZERO, Goldilocks::ZERO, Goldilocks::ZERO, Goldilocks::ONE];
+		for j in 0..RATE {
+			state[j] = state[j] + padding_block[j];
+		}
+		self.poseidon2.permute_mut(&mut state);
+
+		let result = &state[..RATE];
+
+		digest_felts_to_bytes(result)
 	}
 
 	/// Hash bytes without any padding
@@ -184,11 +182,11 @@ pub fn injective_bytes_to_felts(input: &[u8]) -> Vec<Goldilocks> {
 		let mut bytes = [0u8; BYTES_PER_ELEMENT];
 
 		if i == num_chunks - 1 {
-    		if chunk.len() < BYTES_PER_ELEMENT {
-    			bytes[chunk.len()] = 1;
-    		} else {
-                unpadded = true;
-            }
+			if chunk.len() < BYTES_PER_ELEMENT {
+				bytes[chunk.len()] = 1;
+			} else {
+				unpadded = true;
+			}
 		}
 
 		bytes[..chunk.len()].copy_from_slice(chunk);
@@ -197,9 +195,9 @@ pub fn injective_bytes_to_felts(input: &[u8]) -> Vec<Goldilocks> {
 		let field_element = Goldilocks::from_int(value as u64);
 		field_elements.push(field_element);
 	}
-	
+
 	if unpadded {
-	    let value = u32::from_le_bytes([1, 0, 0, 0]);
+		let value = u32::from_le_bytes([1, 0, 0, 0]);
 		let felt = Goldilocks::from_int(value as u64);
 		field_elements.push(felt);
 	}
@@ -404,9 +402,18 @@ mod tests {
 			(vec![], "a758df330564062d57d06c081846c900347c330a891e82fabc20a8b0c7a5dec4"),
 			(vec![0u8], "0e1b4b8a3581c835b0542bd24bfc9129e91c5945e409def92255be843ae71e10"),
 			(vec![0u8, 0u8], "82dc36489059ffcde358b2a26dcc67823a505d1695beda13c945afb05556c13e"),
-			(vec![0u8, 0u8, 0u8], "6121eafdc196aea901fde407659439456d381e090d5fd84530b80619adf1ddc3"),
-			(vec![0u8, 0u8, 0u8, 0u8], "24c775ada3c6c93426d9aa4237134dac4c90bbe90f3e44b33bf9e7777ecbd944"),
-			(vec![0u8, 0u8, 0u8, 1u8], "2e97af563d4a17926bdb92a03bf9d9ad22ba9ff45eeb5cfc3d5ca7a3cadde670"),
+			(
+				vec![0u8, 0u8, 0u8],
+				"6121eafdc196aea901fde407659439456d381e090d5fd84530b80619adf1ddc3",
+			),
+			(
+				vec![0u8, 0u8, 0u8, 0u8],
+				"24c775ada3c6c93426d9aa4237134dac4c90bbe90f3e44b33bf9e7777ecbd944",
+			),
+			(
+				vec![0u8, 0u8, 0u8, 1u8],
+				"2e97af563d4a17926bdb92a03bf9d9ad22ba9ff45eeb5cfc3d5ca7a3cadde670",
+			),
 			(
 				vec![1u8, 2, 3, 4, 5, 6, 7, 8],
 				"a1ffa4f47c6bb6b852936bf63f7ba162562634ec119d684dbd22d2989f51a526",

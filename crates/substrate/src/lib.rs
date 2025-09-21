@@ -1,11 +1,10 @@
 use codec::{Decode, Encode};
 use p3_goldilocks::Goldilocks;
 use qp_poseidon_core::{digest_bytes_to_felts, u128_to_felts, u64_to_felts, Poseidon2Core};
-use scale_info::prelude::vec::Vec;
-use scale_info::TypeInfo;
+use scale_info::{prelude::vec::Vec, TypeInfo};
+use sp_core::{Hasher, H256};
 use sp_storage::StateVersion;
 use sp_trie::{LayoutV0, LayoutV1, TrieConfiguration};
-use sp_core::{Hasher, H256};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -143,9 +142,8 @@ impl sp_runtime::traits::Hash for PoseidonHasher {
 mod tests {
 	use super::*;
 	use hex;
-	use p3_field::PrimeField64;
+	use p3_field::{integers::QuotientMap, PrimeField64};
 	use scale_info::prelude::vec;
-	use p3_field::integers::QuotientMap;
 
 	#[cfg(feature = "std")]
 	use env_logger;
