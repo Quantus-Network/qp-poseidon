@@ -1,10 +1,12 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
 extern crate alloc;
 
 use alloc::vec::Vec;
 use codec::{Decode, Encode};
 use p3_goldilocks::Goldilocks;
 use qp_poseidon_core::{digest_bytes_to_felts, u128_to_felts, u64_to_felts, Poseidon2Core};
-// use scale_info::{TypeInfo};
+use scale_info::{TypeInfo};
 use core::{
 	clone::Clone,
 	cmp::{Eq, PartialEq},
@@ -45,7 +47,7 @@ impl core::hash::Hasher for PoseidonStdHasher {
 }
 
 /// Substrate-compatible Poseidon hasher with codec traits
-#[derive(PartialEq, Eq, Clone, Debug, Encode, Decode)]
+#[derive(PartialEq, Eq, Clone, Debug, Encode, Decode, TypeInfo)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct PoseidonHasher;
 
