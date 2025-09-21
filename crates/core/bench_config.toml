@@ -1,0 +1,27 @@
+[criterion]
+# Enable HTML reports for better visualization
+html_reports_enabled = true
+# Set confidence level for statistical analysis
+confidence_level = 0.95
+# Set significance level for detecting changes
+significance_level = 0.05
+# Number of samples to collect
+sample_size = 100
+# Warm up time before measurements
+warm_up_time = "3s"
+# Measurement time for each benchmark
+measurement_time = "5s"
+# Number of resamples for bootstrap
+nresamples = 100000
+
+[measurement]
+# Use wall-clock time for measurements
+measurement_overhead_correction = true
+# Filter outliers
+outlier_detection = "auto"
+
+[output]
+# Generate plots and detailed reports
+verbose_output = true
+# Save raw data for further analysis
+save_baseline = "benchmark_baseline"

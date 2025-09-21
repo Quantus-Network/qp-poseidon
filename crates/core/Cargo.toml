@@ -27,7 +27,12 @@ rand_chacha = { version = "0.9", default-features = false }
 
 [dev-dependencies]
 hex = "0.4.3"
+criterion = { version = "0.5", features = ["html_reports"] }
 
 [features]
 default = []
 std = []
+
+[[bench]]
+name = "poseidon_benchmarks"
+harness = false
