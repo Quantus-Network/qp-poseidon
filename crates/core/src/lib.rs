@@ -6,7 +6,8 @@ use alloc::{vec, vec::Vec};
 use p3_field::{integers::QuotientMap, PrimeCharacteristicRing, PrimeField64};
 use p3_goldilocks::{Goldilocks, Poseidon2Goldilocks};
 use p3_symmetric::Permutation;
-use rand::{rngs::SmallRng, SeedableRng};
+use rand::Rng;
+use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 
 /// The minimum number of field elements to allocate for the preimage.
 pub const MIN_FIELD_ELEMENT_PREIMAGE_LEN: usize = 189;
@@ -35,14 +36,14 @@ impl Default for Poseidon2Core {
 impl Poseidon2Core {
 	/// Create a new Poseidon2Core instance with deterministic constants
 	pub fn new() -> Self {
-		let mut rng = SmallRng::seed_from_u64(POSEIDON2_SEED);
+		let mut rng = ChaCha8Rng::seed_from_u64(POSEIDON2_SEED);
 		let poseidon2 = Poseidon2Goldilocks::<12>::new_from_rng_128(&mut rng);
 		Self { poseidon2 }
 	}
 
 	/// Create a new Poseidon2Core instance with a custom seed
 	pub fn with_seed(seed: u64) -> Self {
-		let mut rng = SmallRng::seed_from_u64(seed);
+		let mut rng = ChaCha8Rng::seed_from_u64(seed);
 		let poseidon2 = Poseidon2Goldilocks::<12>::new_from_rng_128(&mut rng);
 		Self { poseidon2 }
 	}
@@ -399,33 +400,33 @@ mod tests {
 	#[test]
 	fn test_known_value_hashes() {
 		let vectors = [
-			(vec![], "a758df330564062d57d06c081846c900347c330a891e82fabc20a8b0c7a5dec4"),
-			(vec![0u8], "0e1b4b8a3581c835b0542bd24bfc9129e91c5945e409def92255be843ae71e10"),
-			(vec![0u8, 0u8], "82dc36489059ffcde358b2a26dcc67823a505d1695beda13c945afb05556c13e"),
+			(vec![], "ccc610426dc2a9dffdcab4d06db270f70e06d2f7ba6425b3820d8b5ac9e55f86"),
+			(vec![0u8], "135da44c07b901d48cd4324cf448b503155e61f5f83b10da3079fdfc28784dc2"),
+			(vec![0u8, 0u8], "85bf806fe4a70bf5956267e9c368d12100e603f133fb40dff7cf263ab1edf38e"),
 			(
 				vec![0u8, 0u8, 0u8],
-				"6121eafdc196aea901fde407659439456d381e090d5fd84530b80619adf1ddc3",
+				"397bf85754839f2e6e7ffc32aa5819bc76c4feaf09f32c15b52a59bb1bf8eeac",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8],
-				"24c775ada3c6c93426d9aa4237134dac4c90bbe90f3e44b33bf9e7777ecbd944",
+				"d148446cdd61dfae2ab41ac481c44e779d6147929312e515538f8909a8f07cac",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 1u8],
-				"2e97af563d4a17926bdb92a03bf9d9ad22ba9ff45eeb5cfc3d5ca7a3cadde670",
+				"c3769015d73a4ca2c40122b2f3a87f3b7a2b439ab50ef4b5f3c1a0a242649787",
 			),
 			(
 				vec![1u8, 2, 3, 4, 5, 6, 7, 8],
-				"a1ffa4f47c6bb6b852936bf63f7ba162562634ec119d684dbd22d2989f51a526",
+				"803f770150a1a637c9e08e70af67796d47e6931b7f6f07786361cc7fccee06d9",
 			),
-			(vec![255u8; 32], "c506702495470ef3c836649130b0939926dacd7349ce0b5cf03cd71eb0bc969d"),
+			(vec![255u8; 32], "7a423527f64614a72a92cc89ce9c756467e5cca0c5a71a7b2ebeb5111d7a6344"),
 			(
 				b"hello world".to_vec(),
-				"b6412bb818c9b28f4c10b440f4f95ce359e85067e174c35a39cb33e9767af696",
+				"cd49ee1bc59a5537a2102baea2527897e3feab2dedc7bb3bf641d1281edb6562",
 			),
 			(
 				(0u8..32).collect::<Vec<u8>>(),
-				"dcb9127c078eea24f12a4a2802cbb7cfe279f5eeb3e77eca60b6259f0f5e7179",
+				"eac3561bf9c8ed13f6c24b07237d4b7b462436f4b260b4ba5e7f9edfdf9d2167",
 			),
 		];
 		let poseidon = Poseidon2Core::new();
@@ -482,11 +483,14 @@ mod tests {
 	fn test_deterministic_constants() {
 		// Test that using the same seed produces the same results
 		let hasher1 = Poseidon2Core::new();
-		let hasher2 = Poseidon2Core::new();
 		let input = b"test deterministic";
 		let hash1 = hasher1.hash_padded(input);
-		let hash2 = hasher2.hash_padded(input);
-		assert_eq!(hash1, hash2, "Deterministic seed should produce consistent results");
+
+		for _ in 0..100 {
+			let hasher2 = Poseidon2Core::new();
+			let hash2 = hasher2.hash_padded(input);
+			assert_eq!(hash1, hash2, "Deterministic seed should produce consistent results");
+		}
 	}
 
 	#[test]

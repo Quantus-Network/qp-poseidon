@@ -21,7 +21,8 @@ p3-goldilocks = { version = "0.3.0", default-features = false }
 p3-poseidon2 = { version = "0.3.0", default-features = false }
 p3-field = { version = "0.3.0", default-features = false }
 p3-symmetric = { version = "0.3.0", default-features = false }
-rand = { version = "0.9", default-features = false, features = ["small_rng"] }
+rand = { version = "0.9", default-features = false }
+rand_chacha = { version = "0.9", default-features = false }
 
 
 [dev-dependencies]
