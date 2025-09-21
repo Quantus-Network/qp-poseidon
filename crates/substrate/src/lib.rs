@@ -4,9 +4,6 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use codec::{Decode, Encode};
-use p3_goldilocks::Goldilocks;
-use qp_poseidon_core::{digest_bytes_to_felts, u128_to_felts, u64_to_felts, Poseidon2Core};
-use scale_info::{TypeInfo};
 use core::{
 	clone::Clone,
 	cmp::{Eq, PartialEq},
@@ -17,6 +14,9 @@ use core::{
 	iter::Extend,
 	prelude::rust_2024::derive,
 };
+use p3_goldilocks::Goldilocks;
+use qp_poseidon_core::{digest_bytes_to_felts, u128_to_felts, u64_to_felts, Poseidon2Core};
+use scale_info::TypeInfo;
 use sp_core::{Hasher, H256};
 use sp_storage::StateVersion;
 use sp_trie::{LayoutV0, LayoutV1, TrieConfiguration};
