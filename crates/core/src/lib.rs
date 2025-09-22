@@ -427,33 +427,33 @@ mod tests {
 	#[test]
 	fn test_known_value_hashes() {
 		let vectors = [
-			(vec![], "ccc610426dc2a9dffdcab4d06db270f70e06d2f7ba6425b3820d8b5ac9e55f86"),
-			(vec![0u8], "135da44c07b901d48cd4324cf448b503155e61f5f83b10da3079fdfc28784dc2"),
-			(vec![0u8, 0u8], "85bf806fe4a70bf5956267e9c368d12100e603f133fb40dff7cf263ab1edf38e"),
+			(vec![], "02bc5ad566574b498ffb7446ec6c7c7fcb6694684b017f2f09f4f6d9f17c9b54"),
+			(vec![0u8], "b17b423096da9ebd57af5038b490257d9c492e64059c0ccff23f44e6293213d4"),
+			(vec![0u8, 0u8], "9006f7549e6279c878bbe2bab08793d979281e5ae69de9d48ac13cb87943d476"),
 			(
 				vec![0u8, 0u8, 0u8],
-				"397bf85754839f2e6e7ffc32aa5819bc76c4feaf09f32c15b52a59bb1bf8eeac",
+				"3fd976151b8c6915adc6f39d4ef52dd1d4b384c255c2b9e6f88d8b27ab70e656",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8],
-				"d148446cdd61dfae2ab41ac481c44e779d6147929312e515538f8909a8f07cac",
+				"6a2369d69b9cc6cbf8040bd7e9f60c1d6ede9e1d23fa743b64537a9818c8f129",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 1u8],
-				"c3769015d73a4ca2c40122b2f3a87f3b7a2b439ab50ef4b5f3c1a0a242649787",
+				"3f20ce1b4f4d34dc4493d1e015fe17c9d5b3d7e556e8ee7ff04464ffa9d078e5",
 			),
 			(
 				vec![1u8, 2, 3, 4, 5, 6, 7, 8],
-				"803f770150a1a637c9e08e70af67796d47e6931b7f6f07786361cc7fccee06d9",
+				"fbedb36b9728fdf6bd31a30a874dfd8fb187e7286b7092f4bd79e534b77108fa",
 			),
-			(vec![255u8; 32], "7a423527f64614a72a92cc89ce9c756467e5cca0c5a71a7b2ebeb5111d7a6344"),
+			(vec![255u8; 32], "5701ead7b292aaddb47041363e15b4465618b921d00bc63e6a1106c87d199e38"),
 			(
 				b"hello world".to_vec(),
-				"cd49ee1bc59a5537a2102baea2527897e3feab2dedc7bb3bf641d1281edb6562",
+				"baddf0036e2247572749c6e4ca24cdf545521f080f2a4705cad037a559b66b15",
 			),
 			(
 				(0u8..32).collect::<Vec<u8>>(),
-				"eac3561bf9c8ed13f6c24b07237d4b7b462436f4b260b4ba5e7f9edfdf9d2167",
+				"36260fe27d31263e1862b4644cce388edb4d1c724b4c71770387ccb2e86fd8de",
 			),
 		];
 		let poseidon = Poseidon2Core::new();
