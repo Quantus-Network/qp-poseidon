@@ -111,8 +111,7 @@ impl PoseidonHasher {
 		felts.extend(digest_bytes_to_felts(&from_account.encode()));
 		felts.extend(digest_bytes_to_felts(&to_account.encode()));
 		felts.extend(u128_to_felts(amount));
-		let hash = PoseidonHasher::hash_no_pad(felts);
-		hash
+		PoseidonHasher::hash_no_pad(felts)
 	}
 }
 

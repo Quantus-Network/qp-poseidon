@@ -9,7 +9,7 @@ use p3_symmetric::Permutation;
 use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 
 /// The minimum number of field elements to allocate for the preimage.
-pub const MIN_FIELD_ELEMENT_PREIMAGE_LEN: usize = 189;
+pub const MIN_FIELD_ELEMENT_PREIMAGE_LEN: usize = 190;
 const BIT_32_LIMB_MASK: u64 = 0xFFFF_FFFF;
 
 /// Fixed seed for deterministic constant generation
@@ -92,7 +92,7 @@ impl Poseidon2Core {
 
 			for i in 0..RATE {
 				// XOR with state prefix (chaining)
-				state[i] = state[i] + block[i];
+				state[i] += block[i];
 			}
 
 			// Apply Poseidon2 permutation
@@ -104,7 +104,7 @@ impl Poseidon2Core {
 			let padding_block =
 				[Goldilocks::ONE, Goldilocks::ZERO, Goldilocks::ZERO, Goldilocks::ZERO];
 			for i in 0..RATE {
-				state[i] = state[i] + padding_block[i];
+				state[i] += padding_block[i];
 			}
 			self.poseidon2.permute_mut(&mut state);
 		}
@@ -112,7 +112,7 @@ impl Poseidon2Core {
 		// Always append a padding block [0, 0, 0, 1] to cover empty input
 		let padding_block = [Goldilocks::ZERO, Goldilocks::ZERO, Goldilocks::ZERO, Goldilocks::ONE];
 		for j in 0..RATE {
-			state[j] = state[j] + padding_block[j];
+			state[j] += padding_block[j];
 		}
 		self.poseidon2.permute_mut(&mut state);
 
@@ -246,30 +246,58 @@ pub fn injective_felts_to_bytes(input: &[Goldilocks]) -> Vec<u8> {
 	const BYTES_PER_ELEMENT: usize = 4;
 	let mut bytes: Vec<u8> = Vec::new();
 
-	for field_element in input {
-		let value = field_element.as_canonical_u64();
-		let value_bytes = &value.to_le_bytes()[..BYTES_PER_ELEMENT];
-		bytes.extend_from_slice(value_bytes);
+	if input.is_empty() {
+		return bytes;
+	}
+
+	// Collect all words as 4-byte little-endian chunks.
+	let mut words: Vec<[u8; BYTES_PER_ELEMENT]> = Vec::with_capacity(input.len());
+	for fe in input {
+		let v = fe.as_canonical_u64() as u32;
+		words.push(v.to_le_bytes());
+	}
+
+	// Case A: if the last word is exactly 0x00000001 (LE), it's a standalone terminator.
+	if words.last() == Some(&[1, 0, 0, 0]) {
+		// All preceding words are full data.
+		for w in &words[..words.len() - 1] {
+			bytes.extend_from_slice(w);
+		}
+		return bytes;
+	}
+
+	// Case B: otherwise, the final word contains the inline marker:
+	// data bytes, then a single 0x01, then only zeros until the end.
+	// All earlier words are full data.
+	for w in &words[..words.len() - 1] {
+		bytes.extend_from_slice(w);
+	}
+
+	let last = words.last().unwrap();
+	// WE find the marker position j such that last[j] == 1 and last[j+1..] are all zero.
+	// Then the data length in the last word is j bytes; we append last[..j].
+	// If no marker is found (malformed input), fall back to treating the whole word as data.
+	let mut marker_index: Option<usize> = None;
+	for j in 0..BYTES_PER_ELEMENT {
+		if last[j] == 1 && last[j + 1..].iter().all(|&b| b == 0) {
+			marker_index = Some(j);
+			break;
+		}
+	}
+
+	match marker_index {
+		Some(j) => bytes.extend_from_slice(&last[..j]),
+		None => bytes.extend_from_slice(last), // graceful fallback
 	}
 
 	bytes
 }
 
-/// TODO: Implement padding like in other cases (where do we use this??)
-/// Convert a string to field elements (up to 8 bytes)
+/// Convert a string to field elements
 pub fn injective_string_to_felts(input: &str) -> Vec<Goldilocks> {
 	// Convert string to UTF-8 bytes
 	let bytes = input.as_bytes();
-
-	assert!(bytes.len() <= 8, "String must be at most 8 bytes long");
-
-	let mut padded = [0u8; 8];
-	padded[..bytes.len()].copy_from_slice(bytes);
-
-	let first = u32::from_le_bytes(padded[0..4].try_into().unwrap());
-	let second = u32::from_le_bytes(padded[4..8].try_into().unwrap());
-
-	vec![Goldilocks::from_int(first as u64), Goldilocks::from_int(second as u64)]
+	injective_bytes_to_felts(bytes)
 }
 
 #[cfg(test)]
@@ -461,8 +489,8 @@ mod tests {
 		let original_bytes = b"test data";
 		let felts = injective_bytes_to_felts(original_bytes);
 		let recovered_bytes = injective_felts_to_bytes(&felts);
-		// Should match up to the original length
-		assert_eq!(&recovered_bytes[..original_bytes.len()], original_bytes);
+		// Should match the original
+		assert_eq!(&recovered_bytes, original_bytes);
 	}
 
 	#[test]
