@@ -6,7 +6,7 @@ homepage.workspace = true
 repository.workspace = true
 license.workspace = true
 edition.workspace = true
-description = "Poseidon hash implementation for Substrate/Polkadot ecosystem using plonky2 field arithmetic"
+description = "Poseidon hash implementation for Substrate/Polkadot ecosystem using plonky3 field arithmetic"
 keywords = [
 	"cryptography",
 	"hash-functions",
@@ -17,15 +17,15 @@ keywords = [
 categories = ["cryptography"]
 
 [dependencies]
-qp-poseidon-core = { path = "../core", default-features = false }
-p3-goldilocks = { version = "0.3.0", default-features = false }
-p3-field = { version = "0.3.0", default-features = false }
+qp-poseidon-core.workspace = true
+p3-goldilocks.workspace = true
+p3-field.workspace = true
 log.workspace = true
 scale-info.workspace = true
-sp-core = { version = "37.0.0", default-features = false }
-sp-runtime = { version = "42.0.0", default-features = false }
-sp-storage = { version = "22.0.0", default-features = false }
-sp-trie = { version = "40.0.0", default-features = false }
+sp-core.workspace = true
+sp-runtime.workspace = true
+sp-storage.workspace = true
+sp-trie.workspace = true
 codec.workspace = true
 serde = { workspace = true, optional = true }
 

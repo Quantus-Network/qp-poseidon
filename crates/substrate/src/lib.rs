@@ -34,7 +34,6 @@ pub use qp_poseidon_core::{
 #[derive(Default)]
 pub struct PoseidonStdHasher(Vec<u8>);
 
-// #[cfg(feature = "std")]
 impl core::hash::Hasher for PoseidonStdHasher {
 	fn finish(&self) -> u64 {
 		let hash = PoseidonHasher::hash_padded(self.0.as_slice());
