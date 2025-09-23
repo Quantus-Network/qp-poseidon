@@ -1,56 +1,35 @@
-[package]
-name = "qp-poseidon"
-version = "0.9.1"
-description = "Poseidon hash implementation for Substrate/Polkadot ecosystem using plonky2 field arithmetic"
-readme = "README.md"
-license = "MIT-0"
+[workspace]
+resolver = "2"
+members = [
+	"core",
+	"substrate",
+]
+
+[workspace.package]
+version = "0.10.0"
 authors = ["Quantus Network Developers <hello@quantus.com>"]
 homepage = "https://quantus.com"
 repository = "https://github.com/Quantus-Network/qp-poseidon"
+license = "MIT-0"
 edition = "2021"
-keywords = [
-	"cryptography",
-	"hash-functions",
-	"poseidon",
-	"quantus-network",
-	"substrate",
-]
-categories = ["cryptography"]
 
-[dependencies]
+[workspace.dependencies]
+codec = { version = "3.7.5", default-features = false, package = "parity-scale-codec" }
+criterion = { version = "0.5", features = ["html_reports"] }
+ctor = "0.5.0"
+env_logger = "0.11.8"
+hex = "0.4.3"
 log = { version = "0.4.22", default-features = false }
-scale-info = { version = "2.11.1", default-features = false }
-sp-runtime = { version = "42.0.0", default-features = false }
+p3-field = { version = "0.3.0", default-features = false }
+p3-goldilocks = { version = "0.3.0", default-features = false }
+p3-poseidon2 = { version = "0.3.0", default-features = false }
+p3-symmetric = { version = "0.3.0", default-features = false }
+qp-poseidon-core = { path = "./core", default-features = false }
+rand = { version = "0.9", default-features = false, features = ["small_rng"] }
+rand_chacha = { version = "0.9", default-features = false }
+scale-info = { version = "2.11.1", default-features = false, features = ["derive"] }
+serde = { version = "1.0.217", default-features = false }
 sp-core = { version = "37.0.0", default-features = false }
+sp-runtime = { version = "42.0.0", default-features = false }
 sp-storage = { version = "22.0.0", default-features = false }
 sp-trie = { version = "40.0.0", default-features = false }
-codec = { version = "3.7.5", default-features = false, package = "parity-scale-codec" }
-serde = { version = "1.0.217", default-features = false, optional = true }
-qp-plonky2 = { version = "1.1.0", default-features = false, features = [
-	"no_random",
-] }
-
-[dev-dependencies]
-hex = "0.4.3"
-env_logger = "0.11.8"
-ctor = "0.4.2"
-
-[features]
-default = ["std"]
-std = [
-	"codec/std",
-	"scale-info/std",
-	"serde/std",
-	"sp-core/std",
-	"sp-runtime/std",
-	"sp-storage/std",
-]
-
-serde = [
-	"codec/serde",
-	"dep:serde",
-	"scale-info/serde",
-	"sp-core/serde",
-	"sp-runtime/serde",
-	"sp-storage/serde",
-]

@@ -1,0 +1,52 @@
+[package]
+name = "qp-poseidon"
+version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+description = "Poseidon hash implementation for Substrate/Polkadot ecosystem using plonky3 field arithmetic"
+keywords = [
+	"cryptography",
+	"hash-functions",
+	"poseidon",
+	"quantus-network",
+	"substrate",
+]
+categories = ["cryptography"]
+
+[dependencies]
+qp-poseidon-core.workspace = true
+p3-goldilocks.workspace = true
+p3-field.workspace = true
+log.workspace = true
+scale-info.workspace = true
+sp-core.workspace = true
+sp-runtime.workspace = true
+sp-storage.workspace = true
+sp-trie.workspace = true
+codec.workspace = true
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+hex.workspace = true
+env_logger.workspace = true
+ctor.workspace = true
+
+[features]
+default = ["std"]
+std = [
+	"codec/std",
+	"log/std",
+	"scale-info/std",
+	"serde/std",
+	"sp-core/std",
+	"sp-runtime/std",
+	"sp-storage/std",
+]
+serde = [
+	"codec/serde",
+	"dep:serde",
+	"scale-info/serde",
+]

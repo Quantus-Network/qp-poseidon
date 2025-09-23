@@ -1,68 +1,59 @@
 # qp-poseidon
 
-A Poseidon hash implementation for the Substrate/Polkadot ecosystem using plonky2 field arithmetic.
+A workspace containing Poseidon hash implementations for different use cases, built on top of plonky3 field arithmetic.
 
-## Overview
+## 📁 Workspace Structure
 
-This crate provides a Poseidon hash function implementation that integrates with Substrate's hashing traits and storage systems. It uses Goldilocks field arithmetic from plonky2 for efficient cryptographic operations.
+This workspace contains two crates:
 
-## Features
+### `qp-poseidon-core` (`crates/core`)
+Pure Rust implementation of the Poseidon hash function without any external dependencies beyond plonky3.
 
-- **Substrate Integration**: Implements `sp_core::Hasher` and `sp_runtime::traits::Hash` traits
-- **Efficient Field Arithmetic**: Uses plonky2's Goldilocks field for optimal performance
-- **Trie Support**: Compatible with Substrate's trie storage systems (V0 and V1 layouts)
-- **No-std Support**: Can be used in no-std environments
-- **Serde Support**: Optional serialization support
+- **No-std compatible**: Works in embedded and constrained environments
+- **Pure cryptography**: No blockchain or Substrate-specific dependencies
+- **Circuit-compatible**: Padding behavior matches zero-knowledge circuit implementations
+- **Flexible**: Support for both padded and unpadded hashing
 
-## Usage
+### `qp-poseidon` (`crates/substrate`)
+Substrate-compatible wrapper that adds codec traits and blockchain-specific functionality.
 
-Add this to your `Cargo.toml`:
+- **Substrate integration**: Implements required traits for use in Substrate/Polkadot projects
+- **Codec support**: Implements `Encode`, `Decode`, and `TypeInfo` traits
+- **Serde support**: Optional serialization support
+- **Storage hashing**: Specialized functions for Quantus storage operations
 
-```toml
-[dependencies]
-qp-poseidon = "0.0.1"
-```
+See respective [README.md](crates/core/README.md) and [README.md](crates/substrate/README.md) for more details.
 
-### Basic Hashing
+## 📊 Performance
 
-```rust
-use qp_poseidon::PoseidonHasher;
-use sp_core::Hasher;
+The implementation is optimized for:
+- Circuit compatibility (consistent padding)
+- No-std environments
+- Deterministic behavior across platforms
+- Memory efficiency in constrained environments
 
-let data = b"hello world";
-let hash = PoseidonHasher::hash(data);
-println!("Hash: {:?}", hash);
-```
+## 🔒 Security
 
-### As Substrate Hash Function
+- Uses battle-tested plonky3 field arithmetic
+- Implements the standard Poseidon permutation
+- Circuit-compatible padding prevents length extension attacks
+- Extensive test coverage with known test vectors
 
-```rust
-use qp_poseidon::PoseidonHasher;
-use sp_runtime::traits::Hash;
+## 📄 License
 
-let data = b"substrate data";
-let hash = PoseidonHasher::hash(data);
-```
+MIT-0
 
-### Field Element Operations
+## 🤝 Contributing
 
-```rust
-use qp_poseidon::{injective_bytes_to_felts, PoseidonHasher};
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Ensure all tests pass
+6. Submit a pull request
 
-let data = b"some data";
-let field_elements = injective_bytes_to_felts(data);
-let hash = PoseidonHasher::hash_no_pad(field_elements);
-```
+## Related Crates
 
-## Features
-
-- `std` (default): Enables standard library support
-- `serde`: Enables serialization support for types
-
-## License
-
-This project is licensed under the MIT-0 License.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+- [`qp-poseidon-core`](../core) - The underlying pure cryptographic implementation
+- [`parity-scale-codec`](https://github.com/paritytech/parity-scale-codec) - Substrate's encoding library
+- [`plonky3`](https://github.com/0xPolygonZero/plonky3) - The underlying field arithmetic library
