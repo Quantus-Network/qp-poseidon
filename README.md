@@ -56,5 +56,4 @@ MIT-0
 
 - [`qp-poseidon-core`](../core) - The underlying pure cryptographic implementation
 - [`parity-scale-codec`](https://github.com/paritytech/parity-scale-codec) - Substrate's encoding library
-- [`plonky2`](https://github.com/0xPolygonZero/plonky2) - The underlying field arithmetic library
 - [`plonky3`](https://github.com/0xPolygonZero/plonky3) - The underlying field arithmetic library
