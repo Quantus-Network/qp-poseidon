@@ -143,12 +143,15 @@ jobs:
           git checkout "$SOURCE_BRANCH"
           git checkout -b "$branch_name"
           
-          # Update qp-poseidon version
-          echo "Updating Cargo.toml to version: $new_cargo_version"
+          # Update workspace version in root Cargo.toml
+          echo "Updating workspace version to: $new_cargo_version"
           sed -i -E "s/^version\s*=\s*\"[0-9a-zA-Z.-]+\"/version = \"$new_cargo_version\"/" Cargo.toml
+          
+          # Update qp-poseidon-core version in workspace.dependencies
+          sed -i -E "s/(qp-poseidon-core\s*=\s*\{[^}]*version\s*=\s*\")[^\"]+(\")[^}]*\}/\1$new_cargo_version\2, default-features = false }/g" Cargo.toml
 
-          # Update Cargo.lock
-          cargo update --package qp-poseidon
+          # Update Cargo.lock for both packages
+          cargo update --package qp-poseidon-core --package qp-poseidon
 
           # Commit changes
           git config user.name "${{ github.actor }}"

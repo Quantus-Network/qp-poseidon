@@ -143,8 +143,18 @@ jobs:
             --target main \
             $DRAFT_FLAG
 
+      - name: Publish qp-poseidon-core to crates.io
+        run: cargo publish --package qp-poseidon-core --token ${{ secrets.CARGO_REGISTRY_TOKEN }} --allow-dirty
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Wait for qp-poseidon-core to be available
+        run: |
+          echo "Waiting for qp-poseidon-core to be available on crates.io..."
+          sleep 30
+
       - name: Publish qp-poseidon to crates.io
-        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }} --allow-dirty
+        run: cargo publish --package qp-poseidon --token ${{ secrets.CARGO_REGISTRY_TOKEN }} --allow-dirty
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
