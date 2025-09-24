@@ -95,10 +95,10 @@ impl PoseidonHasher {
 	/// This function should only be used to compute the quantus storage key for Transfer Proofs
 	/// It breaks up the bytes input in a specific way that mimics how our zk-circuit does it
 	pub fn hash_storage<AccountId: Decode + Encode + MaxEncodedLen>(x: &[u8]) -> [u8; 32] {
-		let max_encoded_len = u64::max_encoded_len()
-			+ AccountId::max_encoded_len()
-			+ AccountId::max_encoded_len()
-			+ u128::max_encoded_len();
+		let max_encoded_len = u64::max_encoded_len() +
+			AccountId::max_encoded_len() +
+			AccountId::max_encoded_len() +
+			u128::max_encoded_len();
 
 		debug_assert!(
 			x.len() == max_encoded_len,
