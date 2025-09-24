@@ -95,7 +95,7 @@ impl PoseidonHasher {
 	/// This function should only be used to compute the quantus storage key for Transfer Proofs
 	/// It breaks up the bytes input in a specific way that mimics how our zk-circuit does it
 	pub fn hash_storage<AccountId: Decode + Encode>(x: &[u8]) -> [u8; 32] {
-		const STORAGE_HASH_SIZE: usize = 32;
+		const STORAGE_HASH_SIZE: usize = 40;
 		debug_assert!(
 			x.len() == STORAGE_HASH_SIZE,
 			"Input must be exactly {} bytes, but was {}",
