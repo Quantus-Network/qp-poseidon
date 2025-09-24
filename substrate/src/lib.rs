@@ -3,7 +3,7 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use codec::{Decode, Encode};
+use codec::{Decode, Encode, MaxEncodedLen};
 use core::{
 	clone::Clone,
 	cmp::{Eq, PartialEq},
@@ -94,15 +94,19 @@ impl PoseidonHasher {
 	/// Hash storage data for Quantus transfer proofs
 	/// This function should only be used to compute the quantus storage key for Transfer Proofs
 	/// It breaks up the bytes input in a specific way that mimics how our zk-circuit does it
-	pub fn hash_storage<AccountId: Decode + Encode>(x: &[u8]) -> [u8; 32] {
-		const STORAGE_HASH_SIZE: usize = 40;
+	pub fn hash_storage<AccountId: Decode + Encode + MaxEncodedLen>(x: &[u8]) -> [u8; 32] {
+		let max_encoded_len = u64::max_encoded_len() +
+			AccountId::max_encoded_len() +
+			AccountId::max_encoded_len() +
+			u128::max_encoded_len();
+
 		debug_assert!(
-			x.len() == STORAGE_HASH_SIZE,
+			x.len() == max_encoded_len,
 			"Input must be exactly {} bytes, but was {}",
-			STORAGE_HASH_SIZE,
+			max_encoded_len,
 			x.len()
 		);
-		let mut felts = Vec::with_capacity(STORAGE_HASH_SIZE);
+		let mut felts = Vec::with_capacity(max_encoded_len);
 		let mut y = x;
 		let (transfer_count, from_account, to_account, amount): (u64, AccountId, AccountId, u128) =
 			Decode::decode(&mut y).expect("already asserted input length. qed");
