@@ -70,6 +70,14 @@ impl Poseidon2Core {
 	/// TODO: Explicitly test edge cases here ([0, 0, 0, 1] and [0, 0, 0] should be distinct)
 	/// Hash field elements without any padding
 	pub fn hash_no_pad(&self, x: Vec<Goldilocks>) -> [u8; 32] {
+		let state = self.hash_no_pad_state(x);
+
+		let result = &state[..RATE];
+
+		digest_felts_to_bytes(result)
+	}
+
+	fn hash_no_pad_state(&self, x: Vec<Goldilocks>) -> [Goldilocks; WIDTH] {
 		let mut state = [Goldilocks::ZERO; WIDTH];
 
 		// Process in chunks
@@ -116,9 +124,7 @@ impl Poseidon2Core {
 		}
 		self.poseidon2.permute_mut(&mut state);
 
-		let result = &state[..RATE];
-
-		digest_felts_to_bytes(result)
+		state
 	}
 
 	/// Hash bytes without any padding
@@ -126,25 +132,16 @@ impl Poseidon2Core {
 		self.hash_no_pad(injective_bytes_to_felts(x))
 	}
 
-	/// Hash with 512-bit output by hashing input, then hashing the result, and concatenating both
-	pub fn hash_512(&self, x: &[u8]) -> [u8; 64] {
-		let first_hash = self.hash_padded(x);
-		let second_hash = self.hash_padded(&first_hash);
+	/// Hash with 512-bit output by squeezing the sponge twice
+	pub fn hash_squeeze_twice(&self, x: &[u8]) -> [u8; 64] {
+		let mut state = self.hash_no_pad_state(injective_bytes_to_felts(x));
+		let h1 = digest_felts_to_bytes(&state[..RATE]);
+		self.poseidon2.permute_mut(&mut state);
+		let h2 = digest_felts_to_bytes(&state[..RATE]);
 
 		let mut result = [0u8; 64];
-		result[0..32].copy_from_slice(&first_hash);
-		result[32..64].copy_from_slice(&second_hash);
-		result
-	}
-
-	/// Hash field elements with 512-bit output
-	pub fn hash_512_felts(&self, x: Vec<Goldilocks>) -> [u8; 64] {
-		let first_hash = self.hash_padded_felts(x);
-		let second_hash = self.hash_padded(&first_hash);
-
-		let mut result = [0u8; 64];
-		result[0..32].copy_from_slice(&first_hash);
-		result[32..64].copy_from_slice(&second_hash);
+		result[0..32].copy_from_slice(&h1);
+		result[32..64].copy_from_slice(&h2);
 		result
 	}
 }
@@ -521,43 +518,24 @@ mod tests {
 	}
 
 	#[test]
-	fn test_hash_512() {
+	fn test_hash_squeeze_twice() {
 		let hasher = Poseidon2Core::new();
 		let input = b"test 512-bit hash";
-		let hash512 = hasher.hash_512(input);
+		let hash512 = hasher.hash_squeeze_twice(input);
 
 		// Should be exactly 64 bytes
 		assert_eq!(hash512.len(), 64);
 
 		// First 32 bytes should be hash of input
-		let expected_first = hasher.hash_padded(input);
+		let expected_first = hasher.hash_no_pad_bytes(input);
 		assert_eq!(&hash512[0..32], &expected_first);
 
-		// Second 32 bytes should be hash of first hash
-		let expected_second = hasher.hash_padded(&expected_first);
-		assert_eq!(&hash512[32..64], &expected_second);
-
 		// Test deterministic
-		let hash512_2 = hasher.hash_512(input);
+		let hash512_2 = hasher.hash_squeeze_twice(input);
 		assert_eq!(hash512, hash512_2);
 
 		// Different inputs should produce different outputs
-		let different_hash = hasher.hash_512(b"different input");
+		let different_hash = hasher.hash_squeeze_twice(b"different input");
 		assert_ne!(hash512, different_hash);
-	}
-
-	#[test]
-	fn test_hash_512_felts() {
-		let hasher = Poseidon2Core::new();
-		let felts =
-			vec![Goldilocks::from_int(123), Goldilocks::from_int(456), Goldilocks::from_int(789)];
-		let hash512 = hasher.hash_512_felts(felts.clone());
-
-		// Should be exactly 64 bytes
-		assert_eq!(hash512.len(), 64);
-
-		// Should be deterministic
-		let hash512_2 = hasher.hash_512_felts(felts);
-		assert_eq!(hash512, hash512_2);
 	}
 }
