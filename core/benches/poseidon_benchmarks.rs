@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use p3_field::{integers::QuotientMap, PrimeField64};
+use p3_field::integers::QuotientMap;
 use p3_goldilocks::Goldilocks;
 use qp_poseidon_core::{injective_bytes_to_felts, Poseidon2Core};
 
@@ -160,8 +160,8 @@ fn bench_initialization(c: &mut Criterion) {
 }
 
 /// Benchmark 512-bit hash functions
-fn bench_hash_512(c: &mut Criterion) {
-	let mut group = c.benchmark_group("hash_512");
+fn bench_hash_squeeze_twice(c: &mut Criterion) {
+	let mut group = c.benchmark_group("hash_squeeze_twice");
 	let hasher = Poseidon2Core::new();
 
 	let sizes = [32, 64, 128, 256, 512, 1024];
@@ -170,22 +170,9 @@ fn bench_hash_512(c: &mut Criterion) {
 		let data = generate_test_data(size);
 
 		group.throughput(Throughput::Bytes(size as u64));
-		group.bench_with_input(BenchmarkId::new("hash_512_bytes", size), &data, |b, data| {
+		group.bench_with_input(BenchmarkId::new("hash_squeeze_twice", size), &data, |b, data| {
 			b.iter(|| {
-				let result = hasher.hash_512(black_box(data));
-				black_box(result)
-			})
-		});
-	}
-
-	let felt_counts = [4, 8, 16, 32, 64];
-	for &count in &felt_counts {
-		let felts = generate_test_felts(count);
-
-		group.throughput(Throughput::Elements(count as u64));
-		group.bench_with_input(BenchmarkId::new("hash_512_felts", count), &felts, |b, felts| {
-			b.iter(|| {
-				let result = hasher.hash_512_felts(black_box(felts.clone()));
+				let result = hasher.hash_squeeze_twice(black_box(data));
 				black_box(result)
 			})
 		});
@@ -251,7 +238,7 @@ criterion_group!(
 	bench_hash_only,
 	bench_create_and_hash,
 	bench_initialization,
-	bench_hash_512,
+	bench_hash_squeeze_twice,
 	bench_utility_functions,
 	bench_initialization_overhead
 );
