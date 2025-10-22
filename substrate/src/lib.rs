@@ -16,7 +16,7 @@ use core::{
 };
 use p3_field::integers::QuotientMap;
 use p3_goldilocks::Goldilocks;
-use qp_poseidon_core::{u128_to_felts, u64_to_felts, Poseidon2Core};
+use qp_poseidon_core::{try_digest_bytes_to_felts, u128_to_felts, u64_to_felts, Poseidon2Core};
 use scale_info::TypeInfo;
 use sp_core::{Hasher, H256};
 use sp_storage::StateVersion;
@@ -27,8 +27,8 @@ use serde::{Deserialize, Serialize};
 
 // Re-export core functionality for convenience
 pub use qp_poseidon_core::{
-	digest_felts_to_bytes, injective_bytes_to_felts, injective_felts_to_bytes,
-	injective_string_to_felts, MIN_FIELD_ELEMENT_PREIMAGE_LEN,
+	digest_felts_to_bytes, injective_bytes_to_felts, injective_string_to_felts,
+	MIN_FIELD_ELEMENT_PREIMAGE_LEN,
 };
 
 /// A standard library hasher implementation using Poseidon
@@ -111,8 +111,14 @@ impl PoseidonHasher {
 		let (transfer_count, from_account, to_account, amount): (u64, AccountId, AccountId, u128) =
 			Decode::decode(&mut y).expect("already asserted input length. qed");
 		felts.extend(u64_to_felts(transfer_count));
-		felts.extend(Self::digest_bytes_to_felts(&from_account.encode()));
-		felts.extend(Self::digest_bytes_to_felts(&to_account.encode()));
+		felts.extend(
+			try_digest_bytes_to_felts(&from_account.encode())
+				.expect("failed to convert digest bytes to felts"),
+		);
+		felts.extend(
+			try_digest_bytes_to_felts(&to_account.encode())
+				.expect("failed to convert digest bytes to felts"),
+		);
 		felts.extend(u128_to_felts(amount));
 		PoseidonHasher::hash_no_pad(felts)
 	}
@@ -120,8 +126,7 @@ impl PoseidonHasher {
 	pub fn double_hash_felts(felts: Vec<Goldilocks>) -> [u8; 32] {
 		let poseidon = Poseidon2Core::new();
 		let inner_hash = poseidon.hash_no_pad(felts);
-		let second_hash = poseidon.hash_no_pad(Self::digest_bytes_to_felts(&inner_hash));
-		second_hash
+		poseidon.hash_no_pad(Self::digest_bytes_to_felts(&inner_hash))
 	}
 
 	/// Convert bytes to field elements for digest operations (8 bytes per element)
