@@ -86,10 +86,10 @@ impl Poseidon2Core {
 		let mod_len = x.len() % RATE;
 		// If last chunk is not full
 		if mod_len != 0 {
-		    // fill with zeros
+			// fill with zeros
 			x.resize(x.len() + (RATE - mod_len), Goldilocks::ZERO);
 		}
-		
+
 		// Process in chunks
 		for chunk in x.chunks(RATE) {
 			for i in 0..RATE {
