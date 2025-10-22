@@ -2,10 +2,7 @@
 
 extern crate alloc;
 
-use alloc::format;
-use alloc::string::String;
-use alloc::vec;
-use alloc::vec::Vec;
+use alloc::{format, string::String, vec, vec::Vec};
 use p3_field::{integers::QuotientMap, PrimeCharacteristicRing, PrimeField64};
 use p3_goldilocks::{Goldilocks, Poseidon2Goldilocks};
 use p3_symmetric::Permutation;
@@ -170,7 +167,8 @@ pub fn u64_to_felts(num: u64) -> Vec<Goldilocks> {
 
 /// TODO: Explicitly test edge cases here
 /// Convert bytes to field elements in an injective manner (4 bytes per element)
-/// This function is safe and will not result in field casting overflows because u32::MAX < Goldilocks::ORDER
+/// This function is safe and will not result in field casting overflows because u32::MAX <
+/// Goldilocks::ORDER
 pub fn injective_bytes_to_felts(input: &[u8]) -> Vec<Goldilocks> {
 	const BYTES_PER_ELEMENT: usize = 4;
 
@@ -218,7 +216,8 @@ pub fn try_digest_bytes_to_felts(input: &[u8]) -> Result<Vec<Goldilocks>, String
 		let value = u64::from_le_bytes(bytes);
 		// Check that the value is less than the field order, handle it gracefully
 		if value >= Goldilocks::ORDER_U64 {
-			// If the value is out of bounds, we will return an error specifying the byte range that caused the issue
+			// If the value is out of bounds, we will return an error specifying the byte range that
+			// caused the issue
 			return Err(format!(
 				"Byte chunk value exceeds field order. Chunk at index {} (bytes: {:?})",
 				i, chunk
@@ -502,12 +501,10 @@ mod tests {
 		// Should match the original
 		assert_eq!(&recovered_bytes, original_bytes);
 		// try injective felts to bytes should fail for malformed input
-		let malformed_felts = vec![
-			Goldilocks::from_int(0xFFFFFFFF as i64),
-			Goldilocks::from_int(0xFFFFFFFF as i64),
-		];
+		let malformed_felts =
+			vec![Goldilocks::from_int(0xFFFFFFFF as i64), Goldilocks::from_int(0xFFFFFFFF as i64)];
 		let result = try_injective_felts_to_bytes(&malformed_felts);
-		assert!(result.is_err(), "Malformed input should return an error");	
+		assert!(result.is_err(), "Malformed input should return an error");
 	}
 
 	#[test]
