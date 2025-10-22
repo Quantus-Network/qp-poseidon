@@ -2,18 +2,21 @@
 
 extern crate alloc;
 
-use alloc::{vec, vec::Vec};
+use alloc::format;
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
 use p3_field::{integers::QuotientMap, PrimeCharacteristicRing, PrimeField64};
 use p3_goldilocks::{Goldilocks, Poseidon2Goldilocks};
 use p3_symmetric::Permutation;
-use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
+use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
 /// The minimum number of field elements to allocate for the preimage.
 pub const MIN_FIELD_ELEMENT_PREIMAGE_LEN: usize = 190;
 const BIT_32_LIMB_MASK: u64 = 0xFFFF_FFFF;
 
-/// Fixed seed for deterministic constant generation
-const POSEIDON2_SEED: u64 = 0x189189189189189;
+/// Use the first 8 bytes of the fractional part of pi as the seed: 0x243F6A8885A308D3
+const POSEIDON2_SEED: u64 = 0x243F6A8885A308D3;
 
 // 4 felt output => 4 felt rate per round => capacity = 12 - 4 = 8
 // => 256 bits of classical preimage security => 128 bits of quantum preimage security
@@ -35,14 +38,14 @@ impl Default for Poseidon2Core {
 impl Poseidon2Core {
 	/// Create a new Poseidon2Core instance with deterministic constants
 	pub fn new() -> Self {
-		let mut rng = ChaCha8Rng::seed_from_u64(POSEIDON2_SEED);
+		let mut rng = ChaCha20Rng::seed_from_u64(POSEIDON2_SEED);
 		let poseidon2 = Poseidon2Goldilocks::<12>::new_from_rng_128(&mut rng);
 		Self { poseidon2 }
 	}
 
 	/// Create a new Poseidon2Core instance with a custom seed
 	pub fn with_seed(seed: u64) -> Self {
-		let mut rng = ChaCha8Rng::seed_from_u64(seed);
+		let mut rng = ChaCha20Rng::seed_from_u64(seed);
 		let poseidon2 = Poseidon2Goldilocks::<12>::new_from_rng_128(&mut rng);
 		Self { poseidon2 }
 	}
@@ -109,11 +112,6 @@ impl Poseidon2Core {
 			self.poseidon2.permute_mut(&mut state);
 		}
 
-		// Always append a padding block [0, 0, 0, 1] to cover empty input
-		let padding_block = [Goldilocks::ZERO, Goldilocks::ZERO, Goldilocks::ZERO, Goldilocks::ONE];
-		for j in 0..RATE {
-			state[j] += padding_block[j];
-		}
 		self.poseidon2.permute_mut(&mut state);
 
 		let result = &state[..RATE];
@@ -122,6 +120,7 @@ impl Poseidon2Core {
 	}
 
 	/// Hash bytes without any padding
+	/// NOTE: Not domain-separated from hash_no_pad; use with caution
 	pub fn hash_no_pad_bytes(&self, x: &[u8]) -> [u8; 32] {
 		self.hash_no_pad(injective_bytes_to_felts(x))
 	}
@@ -171,6 +170,7 @@ pub fn u64_to_felts(num: u64) -> Vec<Goldilocks> {
 
 /// TODO: Explicitly test edge cases here
 /// Convert bytes to field elements in an injective manner (4 bytes per element)
+/// This function is safe and will not result in field casting overflows because u32::MAX < Goldilocks::ORDER
 pub fn injective_bytes_to_felts(input: &[u8]) -> Vec<Goldilocks> {
 	const BYTES_PER_ELEMENT: usize = 4;
 
@@ -206,20 +206,29 @@ pub fn injective_bytes_to_felts(input: &[u8]) -> Vec<Goldilocks> {
 }
 
 /// Convert bytes to field elements for digest operations (8 bytes per element)
-pub fn digest_bytes_to_felts(input: &[u8]) -> Vec<Goldilocks> {
+/// We return a Result to handle potential out-of-bounds byte chunks gracefully
+pub fn try_digest_bytes_to_felts(input: &[u8]) -> Result<Vec<Goldilocks>, String> {
 	const BYTES_PER_ELEMENT: usize = 8;
 
 	let mut field_elements: Vec<Goldilocks> = Vec::new();
-	for chunk in input.chunks(BYTES_PER_ELEMENT) {
+	for (i, chunk) in input.chunks(BYTES_PER_ELEMENT).enumerate() {
 		let mut bytes = [0u8; BYTES_PER_ELEMENT];
 		bytes[..chunk.len()].copy_from_slice(chunk);
 		// Convert the chunk to a field element.
 		let value = u64::from_le_bytes(bytes);
+		// Check that the value is less than the field order, handle it gracefully
+		if value >= Goldilocks::ORDER_U64 {
+			// If the value is out of bounds, we will return an error specifying the byte range that caused the issue
+			return Err(format!(
+				"Byte chunk value exceeds field order. Chunk at index {} (bytes: {:?})",
+				i, chunk
+			));
+		}
 		let field_element = Goldilocks::from_int(value);
 		field_elements.push(field_element);
 	}
 
-	field_elements
+	Ok(field_elements)
 }
 
 /// Convert field elements back to bytes for digest operations
@@ -242,12 +251,13 @@ pub fn digest_felts_to_bytes(input: &[Goldilocks]) -> [u8; 32] {
 }
 
 /// Convert field elements back to bytes in an injective manner
-pub fn injective_felts_to_bytes(input: &[Goldilocks]) -> Vec<u8> {
+/// Will fail if the input does not conform to the injective encoding scheme
+pub fn try_injective_felts_to_bytes(input: &[Goldilocks]) -> Result<Vec<u8>, &str> {
 	const BYTES_PER_ELEMENT: usize = 4;
 	let mut bytes: Vec<u8> = Vec::new();
 
 	if input.is_empty() {
-		return bytes;
+		return Ok(bytes);
 	}
 
 	// Collect all words as 4-byte little-endian chunks.
@@ -263,7 +273,7 @@ pub fn injective_felts_to_bytes(input: &[Goldilocks]) -> Vec<u8> {
 		for w in &words[..words.len() - 1] {
 			bytes.extend_from_slice(w);
 		}
-		return bytes;
+		return Ok(bytes);
 	}
 
 	// Case B: otherwise, the final word contains the inline marker:
@@ -287,10 +297,10 @@ pub fn injective_felts_to_bytes(input: &[Goldilocks]) -> Vec<u8> {
 
 	match marker_index {
 		Some(j) => bytes.extend_from_slice(&last[..j]),
-		None => bytes.extend_from_slice(last), // graceful fallback
+		None => return Err("Malformed input: no valid terminator found in the last field element"),
 	}
 
-	bytes
+	Ok(bytes)
 }
 
 /// Convert a string to field elements
@@ -427,33 +437,33 @@ mod tests {
 	#[test]
 	fn test_known_value_hashes() {
 		let vectors = [
-			(vec![], "02bc5ad566574b498ffb7446ec6c7c7fcb6694684b017f2f09f4f6d9f17c9b54"),
-			(vec![0u8], "b17b423096da9ebd57af5038b490257d9c492e64059c0ccff23f44e6293213d4"),
-			(vec![0u8, 0u8], "9006f7549e6279c878bbe2bab08793d979281e5ae69de9d48ac13cb87943d476"),
+			(vec![], "220fc99455c974e9c2801c64e783218aa4aaf7ff8c15a1263923b9f7328bdbaa"),
+			(vec![0u8], "6d78f74398ca4d4d2927ac6a8d82a04a6cc6f8f531705aac01f696b427d5b19f"),
+			(vec![0u8, 0u8], "65b4c915dfcba54b54b9c6dff044b312fdb91c4e47a601dc3c8f1aa06759b52f"),
 			(
 				vec![0u8, 0u8, 0u8],
-				"3fd976151b8c6915adc6f39d4ef52dd1d4b384c255c2b9e6f88d8b27ab70e656",
+				"b2cc7cca99208ac1c9fa1088079bbc8bf9ccbf2bc2906cd2399f4a561c597317",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8],
-				"6a2369d69b9cc6cbf8040bd7e9f60c1d6ede9e1d23fa743b64537a9818c8f129",
+				"d6c44d965d38d329d3ae98cbee6ff8d113169d652b7df1d071428d7d53497067",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 1u8],
-				"3f20ce1b4f4d34dc4493d1e015fe17c9d5b3d7e556e8ee7ff04464ffa9d078e5",
+				"6a741ebaa0f1187ee2f938d91007f2b76ac13f75babc9fac932213e117701bbc",
 			),
 			(
 				vec![1u8, 2, 3, 4, 5, 6, 7, 8],
-				"fbedb36b9728fdf6bd31a30a874dfd8fb187e7286b7092f4bd79e534b77108fa",
+				"9b90eeeb13dc65cf695a662df415a9cfae348a7459cc9ded550707fd9c9757ab",
 			),
-			(vec![255u8; 32], "5701ead7b292aaddb47041363e15b4465618b921d00bc63e6a1106c87d199e38"),
+			(vec![255u8; 32], "24e4de8b4b89d5b2d69644718a83f06ce96ee2495cc16dc47abf0224de9fbbd3"),
 			(
 				b"hello world".to_vec(),
-				"baddf0036e2247572749c6e4ca24cdf545521f080f2a4705cad037a559b66b15",
+				"0dfcb3e10661e69ee0b4fb0318131c241468bd31ea1dc57479845da34323b8d3",
 			),
 			(
 				(0u8..32).collect::<Vec<u8>>(),
-				"36260fe27d31263e1862b4644cce388edb4d1c724b4c71770387ccb2e86fd8de",
+				"66965a9fbe8d22909f0826ff5ca1444ed6f2a282fa9c696e55dc427bbaa170f7",
 			),
 		];
 		let poseidon = Poseidon2Core::new();
@@ -488,9 +498,16 @@ mod tests {
 		// Test round-trip conversion
 		let original_bytes = b"test data";
 		let felts = injective_bytes_to_felts(original_bytes);
-		let recovered_bytes = injective_felts_to_bytes(&felts);
+		let recovered_bytes = try_injective_felts_to_bytes(&felts).unwrap();
 		// Should match the original
 		assert_eq!(&recovered_bytes, original_bytes);
+		// try injective felts to bytes should fail for malformed input
+		let malformed_felts = vec![
+			Goldilocks::from_int(0xFFFFFFFF as i64),
+			Goldilocks::from_int(0xFFFFFFFF as i64),
+		];
+		let result = try_injective_felts_to_bytes(&malformed_felts);
+		assert!(result.is_err(), "Malformed input should return an error");	
 	}
 
 	#[test]
