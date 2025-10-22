@@ -14,8 +14,9 @@ use core::{
 	iter::Extend,
 	prelude::rust_2024::derive,
 };
+use p3_field::integers::QuotientMap;
 use p3_goldilocks::Goldilocks;
-use qp_poseidon_core::{try_digest_bytes_to_felts, u128_to_felts, u64_to_felts, Poseidon2Core};
+use qp_poseidon_core::{u128_to_felts, u64_to_felts, Poseidon2Core};
 use scale_info::TypeInfo;
 use sp_core::{Hasher, H256};
 use sp_storage::StateVersion;
@@ -79,16 +80,15 @@ impl PoseidonHasher {
 		hasher.hash_no_pad(x)
 	}
 
-	/// Hash with 512-bit output by hashing input, then hashing the result, and concatenating both
-	pub fn hash_512(x: &[u8]) -> [u8; 64] {
+	pub fn hash_no_pad_bytes(x: &[u8]) -> [u8; 32] {
 		let hasher = Poseidon2Core::new();
-		hasher.hash_512(x)
+		hasher.hash_no_pad_bytes(x)
 	}
 
-	/// Hash field elements with 512-bit output
-	pub fn hash_512_felts(x: Vec<Goldilocks>) -> [u8; 64] {
+	/// Hash with 512-bit output by hashing input, then hashing the result, and concatenating both
+	pub fn hash_squeeze_twice(x: &[u8]) -> [u8; 64] {
 		let hasher = Poseidon2Core::new();
-		hasher.hash_512_felts(x)
+		hasher.hash_squeeze_twice(x)
 	}
 
 	/// Hash storage data for Quantus transfer proofs
@@ -121,6 +121,32 @@ impl PoseidonHasher {
 		);
 		felts.extend(u128_to_felts(amount));
 		PoseidonHasher::hash_no_pad(felts)
+	}
+
+	pub fn double_hash_felts(felts: Vec<Goldilocks>) -> [u8; 32] {
+		let poseidon = Poseidon2Core::new();
+		let inner_hash = poseidon.hash_no_pad(felts);
+		let second_hash = poseidon.hash_no_pad(Self::digest_bytes_to_felts(&inner_hash));
+		second_hash
+	}
+
+	/// Convert bytes to field elements for digest operations (8 bytes per element)
+	/// WARNING: this function should not be used when an attacker can control the input bytes.
+	/// An attacker could find second preimage by simply adding Goldilocks::ORDER_U64
+	fn digest_bytes_to_felts(input: &[u8]) -> Vec<Goldilocks> {
+		const BYTES_PER_ELEMENT: usize = 8;
+
+		let mut field_elements: Vec<Goldilocks> = Vec::new();
+		for chunk in input.chunks(BYTES_PER_ELEMENT) {
+			let mut bytes = [0u8; BYTES_PER_ELEMENT];
+			bytes[..chunk.len()].copy_from_slice(chunk);
+			// Convert the chunk to a field element.
+			let value = u64::from_le_bytes(bytes);
+			let field_element = Goldilocks::from_int(value);
+			field_elements.push(field_element);
+		}
+
+		field_elements
 	}
 }
 
@@ -165,7 +191,7 @@ impl sp_runtime::traits::Hash for PoseidonHasher {
 mod tests {
 	use super::*;
 	use hex;
-	use p3_field::{integers::QuotientMap, PrimeField64};
+	use p3_field::PrimeField64;
 	use scale_info::prelude::vec;
 
 	#[cfg(feature = "std")]
@@ -301,31 +327,26 @@ mod tests {
 	#[test]
 	fn test_substrate_hash_512() {
 		let input = b"test substrate 512-bit";
-		let hash512 = PoseidonHasher::hash_512(input);
+		let hash512 = PoseidonHasher::hash_squeeze_twice(input);
 
 		// Should be exactly 64 bytes
 		assert_eq!(hash512.len(), 64);
 
 		// Should be deterministic
-		let hash512_2 = PoseidonHasher::hash_512(input);
+		let hash512_2 = PoseidonHasher::hash_squeeze_twice(input);
 		assert_eq!(hash512, hash512_2);
 
 		// First 32 bytes should match regular hash
-		let regular_hash = PoseidonHasher::hash_padded(input);
+		let regular_hash = PoseidonHasher::hash_no_pad_bytes(input);
 		assert_eq!(&hash512[0..32], &regular_hash);
 	}
 
 	#[test]
-	fn test_substrate_hash_512_felts() {
-		let felts =
-			vec![Goldilocks::from_int(111), Goldilocks::from_int(222), Goldilocks::from_int(333)];
-		let hash512 = PoseidonHasher::hash_512_felts(felts.clone());
-
-		// Should be exactly 64 bytes
-		assert_eq!(hash512.len(), 64);
-
-		// Should be deterministic
-		let hash512_2 = PoseidonHasher::hash_512_felts(felts);
-		assert_eq!(hash512, hash512_2);
+	fn test_double_hash() {
+		let preimage =
+			hex::decode("afd8e7530b95ee5ebab950c9a0c62fae1e80463687b3982233028e914f8ec7cc")
+				.unwrap();
+		let felts = injective_bytes_to_felts(&preimage);
+		let _hash = PoseidonHasher::double_hash_felts(felts);
 	}
 }
