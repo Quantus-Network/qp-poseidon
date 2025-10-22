@@ -77,52 +77,29 @@ impl Poseidon2Core {
 		digest_felts_to_bytes(result)
 	}
 
-	fn hash_no_pad_state(&self, x: Vec<Goldilocks>) -> [Goldilocks; WIDTH] {
+	fn hash_no_pad_state(&self, mut x: Vec<Goldilocks>) -> [Goldilocks; WIDTH] {
 		let mut state = [Goldilocks::ZERO; WIDTH];
 
+		// Variable length padding according to https://eprint.iacr.org/2019/458.pdf
+		// All messages get an extra 1 at the end
+		x.push(Goldilocks::ONE);
+		let mod_len = x.len() % RATE;
+		// If last chunk is not full
+		if mod_len != 0 {
+		    // fill with zeros
+			x.resize(x.len() + (RATE - mod_len), Goldilocks::ZERO);
+		}
+		
 		// Process in chunks
-		let chunks = x.chunks(RATE);
-		let num_chunks = chunks.len();
-		let mut unpadded = false;
-		for (j, chunk) in chunks.enumerate() {
-			let mut block = [Goldilocks::ZERO; RATE];
-			if j == num_chunks - 1 {
-				if chunk.len() < RATE {
-					block[chunk.len()] = Goldilocks::ONE;
-				} else {
-					unpadded = true;
-				}
-			}
-
-			for (i, &elem) in chunk.iter().enumerate() {
-				block[i] = elem;
-			}
-
+		for chunk in x.chunks(RATE) {
 			for i in 0..RATE {
-				// XOR with state prefix (chaining)
-				state[i] += block[i];
+				// Add chunk to state
+				state[i] += chunk[i];
 			}
 
 			// Apply Poseidon2 permutation
 			self.poseidon2.permute_mut(&mut state);
 		}
-
-		if unpadded {
-			// If the last chunk was not padded, we need to append a padding block
-			let padding_block =
-				[Goldilocks::ONE, Goldilocks::ZERO, Goldilocks::ZERO, Goldilocks::ZERO];
-			for i in 0..RATE {
-				state[i] += padding_block[i];
-			}
-			self.poseidon2.permute_mut(&mut state);
-		}
-
-		// Always append a padding block [0, 0, 0, 1] to cover empty input
-		let padding_block = [Goldilocks::ZERO, Goldilocks::ZERO, Goldilocks::ZERO, Goldilocks::ONE];
-		for j in 0..RATE {
-			state[j] += padding_block[j];
-		}
-		self.poseidon2.permute_mut(&mut state);
 
 		state
 	}
@@ -424,33 +401,33 @@ mod tests {
 	#[test]
 	fn test_known_value_hashes() {
 		let vectors = [
-			(vec![], "02bc5ad566574b498ffb7446ec6c7c7fcb6694684b017f2f09f4f6d9f17c9b54"),
-			(vec![0u8], "b17b423096da9ebd57af5038b490257d9c492e64059c0ccff23f44e6293213d4"),
-			(vec![0u8, 0u8], "9006f7549e6279c878bbe2bab08793d979281e5ae69de9d48ac13cb87943d476"),
+			(vec![], "6d333ca052c1870b58ddb97bde102c5dd2757972a3db8b6b0e45f1e1b4992fc2"),
+			(vec![0u8], "c225a9b20975d410272228a437c8ea3ed495b3cda6a1679c35a7169411c17f62"),
+			(vec![0u8, 0u8], "e2ed4e5b7fc8ce8a8f031b0428d7c3301c23bf54c5fcc61a2e92035694eb3d04"),
 			(
 				vec![0u8, 0u8, 0u8],
-				"3fd976151b8c6915adc6f39d4ef52dd1d4b384c255c2b9e6f88d8b27ab70e656",
+				"e233a9d04dda988a500cef37477fbd77458ed85ddbfeea52aa674dc14a4a726d",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8],
-				"6a2369d69b9cc6cbf8040bd7e9f60c1d6ede9e1d23fa743b64537a9818c8f129",
+				"2ad7c221bfd049c6f16d027b3124360dd9574d0345ee560e74b7013c6f58fdfe",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 1u8],
-				"3f20ce1b4f4d34dc4493d1e015fe17c9d5b3d7e556e8ee7ff04464ffa9d078e5",
+				"6dd5508dcccb8e7edcccd11fb172a83e9f2c581f7a20fb7fb95a85d3e8b42d79",
 			),
 			(
 				vec![1u8, 2, 3, 4, 5, 6, 7, 8],
-				"fbedb36b9728fdf6bd31a30a874dfd8fb187e7286b7092f4bd79e534b77108fa",
+				"594ff5a1bf903480d5ab02fcff19f6cbfd91a00863b014a67258e563d2db57b4",
 			),
-			(vec![255u8; 32], "5701ead7b292aaddb47041363e15b4465618b921d00bc63e6a1106c87d199e38"),
+			(vec![255u8; 32], "760a1cc9785dfb6800427a60c5cced55dbd84a97cd3bfe86a01a38735a2f2fa4"),
 			(
 				b"hello world".to_vec(),
-				"baddf0036e2247572749c6e4ca24cdf545521f080f2a4705cad037a559b66b15",
+				"f495dc091e9972db7912d1a3c2cf38e3e9941add1298e7b9f799a11a18587da4",
 			),
 			(
 				(0u8..32).collect::<Vec<u8>>(),
-				"36260fe27d31263e1862b4644cce388edb4d1c724b4c71770387ccb2e86fd8de",
+				"08c0711e1abbe0c2b7fb5de0c632c36bea2ac6af5b58e9d4ae89cbebe235cb00",
 			),
 		];
 		let poseidon = Poseidon2Core::new();
