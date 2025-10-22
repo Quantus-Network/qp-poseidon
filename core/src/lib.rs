@@ -179,23 +179,6 @@ pub fn injective_bytes_to_felts(input: &[u8]) -> Vec<Goldilocks> {
 	field_elements
 }
 
-/// Convert bytes to field elements for digest operations (8 bytes per element)
-pub fn digest_bytes_to_felts(input: &[u8]) -> Vec<Goldilocks> {
-	const BYTES_PER_ELEMENT: usize = 8;
-
-	let mut field_elements: Vec<Goldilocks> = Vec::new();
-	for chunk in input.chunks(BYTES_PER_ELEMENT) {
-		let mut bytes = [0u8; BYTES_PER_ELEMENT];
-		bytes[..chunk.len()].copy_from_slice(chunk);
-		// Convert the chunk to a field element.
-		let value = u64::from_le_bytes(bytes);
-		let field_element = Goldilocks::from_int(value);
-		field_elements.push(field_element);
-	}
-
-	field_elements
-}
-
 /// Convert field elements back to bytes for digest operations
 pub fn digest_felts_to_bytes(input: &[Goldilocks]) -> [u8; 32] {
 	const DIGEST_BYTES_PER_ELEMENT: usize = 8;
