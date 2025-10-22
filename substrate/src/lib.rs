@@ -126,8 +126,7 @@ impl PoseidonHasher {
 	pub fn double_hash_felts(felts: Vec<Goldilocks>) -> [u8; 32] {
 		let poseidon = Poseidon2Core::new();
 		let inner_hash = poseidon.hash_no_pad(felts);
-		let second_hash = poseidon.hash_no_pad(Self::digest_bytes_to_felts(&inner_hash));
-		second_hash
+		poseidon.hash_no_pad(Self::digest_bytes_to_felts(&inner_hash))
 	}
 
 	/// Convert bytes to field elements for digest operations (8 bytes per element)
