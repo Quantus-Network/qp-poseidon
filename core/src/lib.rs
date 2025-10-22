@@ -12,8 +12,8 @@ use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 pub const MIN_FIELD_ELEMENT_PREIMAGE_LEN: usize = 190;
 const BIT_32_LIMB_MASK: u64 = 0xFFFF_FFFF;
 
-/// Use the first 8 bytes of the fractional part of pi as the seed: 0x243F6A8885A308D3
-const POSEIDON2_SEED: u64 = 0x243F6A8885A308D3;
+/// Use the first 8 bytes of the pi written out 3.141592653589793
+const POSEIDON2_SEED: u64 = 0x3141592653589793;
 
 // 4 felt output => 4 felt rate per round => capacity = 12 - 4 = 8
 // => 256 bits of classical preimage security => 128 bits of quantum preimage security
@@ -415,33 +415,33 @@ mod tests {
 	#[test]
 	fn test_known_value_hashes() {
 		let vectors = [
-			(vec![], "6d333ca052c1870b58ddb97bde102c5dd2757972a3db8b6b0e45f1e1b4992fc2"),
-			(vec![0u8], "c225a9b20975d410272228a437c8ea3ed495b3cda6a1679c35a7169411c17f62"),
-			(vec![0u8, 0u8], "e2ed4e5b7fc8ce8a8f031b0428d7c3301c23bf54c5fcc61a2e92035694eb3d04"),
+			(vec![], "a6fc4818a78230f52ad1c4f0b6b29abba3fd421fcb32dfa5b525a48eed1f7b85"),
+			(vec![0u8], "f208459942ef56aae963c09b38eb9ea631d26f304d50628369e0373c16c2c516"),
+			(vec![0u8, 0u8], "4df1066b0c88d6e3cb82a640de001d00a90f74df8de869c2b043f3d643c101fb"),
 			(
 				vec![0u8, 0u8, 0u8],
-				"e233a9d04dda988a500cef37477fbd77458ed85ddbfeea52aa674dc14a4a726d",
+				"969626772357a9a50e29d32045f9dbc6292d8c479a3063e4c683470695b7c7dd",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8],
-				"2ad7c221bfd049c6f16d027b3124360dd9574d0345ee560e74b7013c6f58fdfe",
+				"fd36111acef038ed81719135048ad4f057a97135b59f4a0c87d1c16061b1f811",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 1u8],
-				"6dd5508dcccb8e7edcccd11fb172a83e9f2c581f7a20fb7fb95a85d3e8b42d79",
+				"14dbdd7765407ead3bebbda7425973a0c71dee5b1105cfc89dc331c29ee3dbdd",
 			),
 			(
 				vec![1u8, 2, 3, 4, 5, 6, 7, 8],
-				"594ff5a1bf903480d5ab02fcff19f6cbfd91a00863b014a67258e563d2db57b4",
+				"d7d844a077c87dd71c2a9c74f4db6259cc576f067b5ba6a3da1ebd207083dce2",
 			),
-			(vec![255u8; 32], "760a1cc9785dfb6800427a60c5cced55dbd84a97cd3bfe86a01a38735a2f2fa4"),
+			(vec![255u8; 32], "7c213ed101ac7d262587405268bb0692650873d57cc56e8693792a40bff46743"),
 			(
 				b"hello world".to_vec(),
-				"f495dc091e9972db7912d1a3c2cf38e3e9941add1298e7b9f799a11a18587da4",
+				"99a92e778137a1c178e482ed2e2c9b22e7a38f63ed6dc55f9b3c4d295199b4d3",
 			),
 			(
 				(0u8..32).collect::<Vec<u8>>(),
-				"08c0711e1abbe0c2b7fb5de0c632c36bea2ac6af5b58e9d4ae89cbebe235cb00",
+				"c028ef4990bc5cb5ef7b5dd35cff693d4872a182866b1f442d1e8a4e1e726deb",
 			),
 		];
 		let poseidon = Poseidon2Core::new();

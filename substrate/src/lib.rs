@@ -16,7 +16,7 @@ use core::{
 };
 use p3_field::integers::QuotientMap;
 use p3_goldilocks::Goldilocks;
-use qp_poseidon_core::{u128_to_felts, u64_to_felts, Poseidon2Core};
+use qp_poseidon_core::{try_digest_bytes_to_felts, u128_to_felts, u64_to_felts, Poseidon2Core};
 use scale_info::TypeInfo;
 use sp_core::{Hasher, H256};
 use sp_storage::StateVersion;
