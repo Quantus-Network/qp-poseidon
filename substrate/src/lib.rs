@@ -79,16 +79,15 @@ impl PoseidonHasher {
 		hasher.hash_no_pad(x)
 	}
 
-	/// Hash with 512-bit output by hashing input, then hashing the result, and concatenating both
-	pub fn hash_512(x: &[u8]) -> [u8; 64] {
+	pub fn hash_no_pad_bytes(x: &[u8]) -> [u8; 32] {
 		let hasher = Poseidon2Core::new();
-		hasher.hash_512(x)
+		hasher.hash_no_pad_bytes(x)
 	}
 
-	/// Hash field elements with 512-bit output
-	pub fn hash_512_felts(x: Vec<Goldilocks>) -> [u8; 64] {
+	/// Hash with 512-bit output by hashing input, then hashing the result, and concatenating both
+	pub fn hash_squeeze_twice(x: &[u8]) -> [u8; 64] {
 		let hasher = Poseidon2Core::new();
-		hasher.hash_512_felts(x)
+		hasher.hash_squeeze_twice(x)
 	}
 
 	/// Hash storage data for Quantus transfer proofs
@@ -159,7 +158,7 @@ impl sp_runtime::traits::Hash for PoseidonHasher {
 mod tests {
 	use super::*;
 	use hex;
-	use p3_field::{integers::QuotientMap, PrimeField64};
+	use p3_field::PrimeField64;
 	use scale_info::prelude::vec;
 
 	#[cfg(feature = "std")]
@@ -295,31 +294,17 @@ mod tests {
 	#[test]
 	fn test_substrate_hash_512() {
 		let input = b"test substrate 512-bit";
-		let hash512 = PoseidonHasher::hash_512(input);
+		let hash512 = PoseidonHasher::hash_squeeze_twice(input);
 
 		// Should be exactly 64 bytes
 		assert_eq!(hash512.len(), 64);
 
 		// Should be deterministic
-		let hash512_2 = PoseidonHasher::hash_512(input);
+		let hash512_2 = PoseidonHasher::hash_squeeze_twice(input);
 		assert_eq!(hash512, hash512_2);
 
 		// First 32 bytes should match regular hash
-		let regular_hash = PoseidonHasher::hash_padded(input);
+		let regular_hash = PoseidonHasher::hash_no_pad_bytes(input);
 		assert_eq!(&hash512[0..32], &regular_hash);
-	}
-
-	#[test]
-	fn test_substrate_hash_512_felts() {
-		let felts =
-			vec![Goldilocks::from_int(111), Goldilocks::from_int(222), Goldilocks::from_int(333)];
-		let hash512 = PoseidonHasher::hash_512_felts(felts.clone());
-
-		// Should be exactly 64 bytes
-		assert_eq!(hash512.len(), 64);
-
-		// Should be deterministic
-		let hash512_2 = PoseidonHasher::hash_512_felts(felts);
-		assert_eq!(hash512, hash512_2);
 	}
 }
