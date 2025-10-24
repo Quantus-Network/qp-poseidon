@@ -14,8 +14,8 @@ use p3_goldilocks::{Goldilocks, Poseidon2Goldilocks};
 use p3_symmetric::Permutation;
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
-/// The minimum number of field elements to allocate for the preimage.
-pub const MIN_FIELD_ELEMENT_PREIMAGE_LEN: usize = 189;
+/// The number of field elements to which inputs are padded in circuit-compatible hashing functions.
+pub const FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 189;
 
 /// Use the first 8 bytes of the pi written out 3.141592653589793
 const POSEIDON2_SEED: u64 = 0x3141592653589793;
@@ -31,10 +31,85 @@ pub use serialization::p2_backend::GF as P2GF;
 #[cfg(feature = "p3")]
 pub use serialization::p3_backend::GF as P3GF;
 
+// Internal state for Poseidon2 hashing
+struct Poseidon2State {
+	state: [Goldilocks; WIDTH],
+	buf: [Goldilocks; RATE],
+	buf_len: usize,
+}
+
+impl Poseidon2State {
+	fn new() -> Self {
+		Self { state: [Goldilocks::ZERO; WIDTH], buf: [Goldilocks::ZERO; RATE], buf_len: 0 }
+	}
+
+	#[inline]
+	fn push_to_buf(&mut self, x: Goldilocks, poseidon2: &Poseidon2Goldilocks<WIDTH>) {
+		self.buf[self.buf_len] = x;
+		self.buf_len += 1;
+		if self.buf_len == RATE {
+			self.absorb_full_block(poseidon2);
+		}
+	}
+
+	#[inline]
+	fn absorb_full_block(&mut self, poseidon2: &Poseidon2Goldilocks<WIDTH>) {
+		// absorb RATE elements into state, then permute
+		for i in 0..RATE {
+			self.state[i] += self.buf[i];
+		}
+		poseidon2.permute_mut(&mut self.state);
+		self.buf = [Goldilocks::ZERO; RATE];
+		self.buf_len = 0;
+	}
+
+	fn append(&mut self, blocks: &[Goldilocks], poseidon2: &Poseidon2Goldilocks<WIDTH>) {
+		for &b in blocks {
+			self.push_to_buf(b, poseidon2);
+		}
+	}
+
+	fn append_bytes(&mut self, bytes: &[u8], poseidon2: &Poseidon2Goldilocks<WIDTH>) {
+		let felts = injective_bytes_to_felts(bytes);
+		self.append(&felts, poseidon2);
+	}
+
+	/// Finalize with variable-length padding (…||1||0* to RATE) and return the full WIDTH state.
+	fn finalize_state(mut self, poseidon2: &Poseidon2Goldilocks<WIDTH>) -> [Goldilocks; WIDTH] {
+		// message-end '1'
+		self.push_to_buf(Goldilocks::ONE, poseidon2);
+		// zero-fill remaining of final block
+		while self.buf_len != 0 {
+			self.push_to_buf(Goldilocks::ZERO, poseidon2);
+		}
+		self.state
+	}
+
+	/// Finalize and return a 32-byte digest (first RATE felts).
+	fn finalize(self, poseidon2: &Poseidon2Goldilocks<WIDTH>) -> [u8; 32] {
+		let state = self.finalize_state(poseidon2);
+		digest_felts_to_bytes(&state[..RATE].try_into().expect("RATE <= WIDTH"))
+	}
+
+	/// Finalize and squeeze 64 bytes (two squeezes).
+	fn finalize_twice(self, poseidon2: &Poseidon2Goldilocks<WIDTH>) -> [u8; 64] {
+		let mut state = self.finalize_state(poseidon2);
+		let h1 = digest_felts_to_bytes(&state[..RATE].try_into().expect("RATE <= WIDTH"));
+		// second squeeze
+		poseidon2.permute_mut(&mut state);
+		let h2 = digest_felts_to_bytes(&state[..RATE].try_into().expect("RATE <= WIDTH"));
+
+		let mut out = [0u8; 64];
+		out[..32].copy_from_slice(&h1);
+		out[32..].copy_from_slice(&h2);
+		out
+	}
+}
+
 /// Core Poseidon2 hasher implementation that holds an initialized instance
 #[derive(Clone)]
 pub struct Poseidon2Core {
-	poseidon2: Poseidon2Goldilocks<12>,
+	poseidon2: Poseidon2Goldilocks<WIDTH>,
 }
 
 impl Default for Poseidon2Core {
@@ -47,7 +122,7 @@ impl Poseidon2Core {
 	/// Create a new Poseidon2Core instance deriving constants
 	pub fn new_unoptimized() -> Self {
 		let mut rng = ChaCha20Rng::seed_from_u64(POSEIDON2_SEED);
-		let poseidon2 = Poseidon2Goldilocks::<12>::new_from_rng_128(&mut rng);
+		let poseidon2 = Poseidon2Goldilocks::<WIDTH>::new_from_rng_128(&mut rng);
 		Self { poseidon2 }
 	}
 
@@ -64,7 +139,7 @@ impl Poseidon2Core {
 	/// Create a new Poseidon2Core instance with a custom seed
 	pub fn with_seed(seed: u64) -> Self {
 		let mut rng = ChaCha20Rng::seed_from_u64(seed);
-		let poseidon2 = Poseidon2Goldilocks::<12>::new_from_rng_128(&mut rng);
+		let poseidon2 = Poseidon2Goldilocks::<WIDTH>::new_from_rng_128(&mut rng);
 		Self { poseidon2 }
 	}
 
@@ -92,56 +167,24 @@ impl Poseidon2Core {
 
 	/// Hash field elements without any padding
 	pub fn hash_variable_length(&self, x: Vec<Goldilocks>) -> [u8; 32] {
-		let state = self.hash_variable_length_state(x);
-
-		digest_felts_to_bytes(&state[..RATE].try_into().expect("Should never fail"))
-	}
-
-	/// Hash field elements with message-end padding of 1 and fill 0 to alignment to RATE
-	fn hash_variable_length_state(&self, mut x: Vec<Goldilocks>) -> [Goldilocks; WIDTH] {
-		let mut state = [Goldilocks::ZERO; WIDTH];
-
-		// Variable length padding according to https://eprint.iacr.org/2019/458.pdf
-		// All messages get an extra 1 at the end
-		x.push(Goldilocks::ONE);
-		let mod_len = x.len() % RATE;
-		// If last chunk is not full
-		if mod_len != 0 {
-			// fill with zeros
-			x.resize(x.len() + (RATE - mod_len), Goldilocks::ZERO);
-		}
-
-		// Process in chunks
-		for chunk in x.chunks(RATE) {
-			for i in 0..RATE {
-				// Add chunk to state
-				state[i] += chunk[i];
-			}
-
-			// Apply Poseidon2 permutation
-			self.poseidon2.permute_mut(&mut state);
-		}
-
-		state
+		let mut st = Poseidon2State::new();
+		st.append(&x, &self.poseidon2);
+		st.finalize(&self.poseidon2)
 	}
 
 	/// Hash bytes without any padding
 	/// NOTE: Not domain-separated from hash_variable_length; use with caution
 	pub fn hash_variable_length_bytes(&self, x: &[u8]) -> [u8; 32] {
-		self.hash_variable_length(injective_bytes_to_felts(x))
+		let mut st = Poseidon2State::new();
+		st.append_bytes(x, &self.poseidon2);
+		st.finalize(&self.poseidon2)
 	}
 
 	/// Hash with 512-bit output by squeezing the sponge twice
 	pub fn hash_squeeze_twice(&self, x: &[u8]) -> [u8; 64] {
-		let mut state = self.hash_variable_length_state(injective_bytes_to_felts(x));
-		let h1 = digest_felts_to_bytes(&state[..RATE].try_into().expect("Should never fail"));
-		self.poseidon2.permute_mut(&mut state);
-		let h2 = digest_felts_to_bytes(&state[..RATE].try_into().expect("Should never fail"));
-
-		let mut result = [0u8; 64];
-		result[0..32].copy_from_slice(&h1);
-		result[32..64].copy_from_slice(&h2);
-		result
+		let mut st = Poseidon2State::new();
+		st.append_bytes(x, &self.poseidon2);
+		st.finalize_twice(&self.poseidon2)
 	}
 }
 
@@ -152,7 +195,7 @@ mod tests {
 	use hex;
 	use p3_field::PrimeField64;
 
-	const C: usize = MIN_FIELD_ELEMENT_PREIMAGE_LEN;
+	const C: usize = FIELD_ELEMENT_PREIMAGE_PADDING_LEN;
 
 	#[test]
 	fn test_empty_input() {

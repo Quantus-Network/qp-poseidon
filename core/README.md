@@ -54,11 +54,11 @@ let string_felts = injective_string_to_felts("hello");
 
 ### Constants
 
-- `MIN_FIELD_ELEMENT_PREIMAGE_LEN: usize = 190` - Minimum field elements for circuit-compatible padding
+- `FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 190` - Minimum field elements for circuit-compatible padding
 
 ### Padding Behavior
 
-- **Padded functions**: Automatically pad input to `MIN_FIELD_ELEMENT_PREIMAGE_LEN` field elements
+- **Padded functions**: Automatically pad input to `FIELD_ELEMENT_PREIMAGE_PADDING_LEN` field elements
 - **Unpadded functions**: Hash input as-is without modification
 - **Field element conversion**: Uses injective mapping to preserve input uniqueness
 

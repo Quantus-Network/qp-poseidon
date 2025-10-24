@@ -92,7 +92,7 @@ pub fn injective_bytes_to_felts<G: GoldiCompat>(input: &[u8]) -> Vec<G> {
 	}
 
 	let chunks = padded_input.chunks(BYTES_PER_ELEMENT);
-	assert!(padded_input.chunks_exact(BYTES_PER_ELEMENT).remainder().len() == 0);
+	assert!(padded_input.chunks_exact(BYTES_PER_ELEMENT).remainder().is_empty());
 
 	for chunk in chunks {
 		let mut bytes = [0u8; BYTES_PER_ELEMENT];
@@ -129,10 +129,10 @@ pub fn try_digest_bytes_to_felts<G: GoldiCompat>(
 pub fn digest_felts_to_bytes<G: GoldiCompat>(input: &[G; RATE]) -> [u8; 32] {
 	// Convert exactly RATE felts to 32 bytes: RATE felts × 8 bytes/felt = 32 bytes
 	let mut bytes = [0u8; 32];
-	for i in 0..RATE {
+	for (i, v) in input.iter().enumerate().take(RATE) {
 		let start = i * 8;
 		let end = start + 8;
-		bytes[start..end].copy_from_slice(&G::to_u64(input[i]).to_le_bytes());
+		bytes[start..end].copy_from_slice(&G::to_u64(*v).to_le_bytes());
 	}
 	bytes
 }
@@ -557,5 +557,4 @@ mod tests {
 			}
 		}
 	}
-
 }

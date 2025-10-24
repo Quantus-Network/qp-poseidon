@@ -17,8 +17,8 @@ use core::{
 use p3_field::integers::QuotientMap;
 use p3_goldilocks::Goldilocks;
 use qp_poseidon_core::{
-	serialization::try_digest_bytes_to_felts, serialization::u128_to_felts,
-	serialization::u64_to_felts, Poseidon2Core,
+	serialization::{try_digest_bytes_to_felts, u128_to_felts, u64_to_felts},
+	Poseidon2Core,
 };
 use scale_info::TypeInfo;
 use sp_core::{Hasher, H256};
@@ -30,8 +30,8 @@ use serde::{Deserialize, Serialize};
 
 // Re-export core functionality for convenience
 pub use qp_poseidon_core::{
-	serialization::injective_bytes_to_felts, serialization::injective_string_to_felts,
-	MIN_FIELD_ELEMENT_PREIMAGE_LEN,
+	serialization::{injective_bytes_to_felts, injective_string_to_felts},
+	FIELD_ELEMENT_PREIMAGE_PADDING_LEN,
 };
 
 /// A standard library hasher implementation using Poseidon
@@ -68,7 +68,7 @@ impl PoseidonHasher {
 	/// Hash bytes with padding to ensure consistent circuit behavior
 	pub fn hash_padded(x: &[u8]) -> [u8; 32] {
 		let hasher = Poseidon2Core::new();
-		hasher.hash_padded_bytes::<MIN_FIELD_ELEMENT_PREIMAGE_LEN>(x)
+		hasher.hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(x)
 	}
 
 	/// Hash field elements without any padding
@@ -92,10 +92,10 @@ impl PoseidonHasher {
 	/// This function should only be used to compute the quantus storage key for Transfer Proofs
 	/// It breaks up the bytes input in a specific way that mimics how our zk-circuit does it
 	pub fn hash_storage<AccountId: Decode + Encode + MaxEncodedLen>(x: &[u8]) -> [u8; 32] {
-		let max_encoded_len = u64::max_encoded_len()
-			+ AccountId::max_encoded_len()
-			+ AccountId::max_encoded_len()
-			+ u128::max_encoded_len();
+		let max_encoded_len = u64::max_encoded_len() +
+			AccountId::max_encoded_len() +
+			AccountId::max_encoded_len() +
+			u128::max_encoded_len();
 
 		debug_assert!(
 			x.len() == max_encoded_len,
@@ -204,7 +204,7 @@ mod tests {
 		// Test that the wrapper produces the same results as the core implementation
 		let input = b"test data";
 		let hasher = Poseidon2Core::new();
-		let core_hash = hasher.hash_padded_bytes::<MIN_FIELD_ELEMENT_PREIMAGE_LEN>(input);
+		let core_hash = hasher.hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(input);
 		let wrapper_hash = PoseidonHasher::hash_padded(input);
 		assert_eq!(core_hash, wrapper_hash);
 	}

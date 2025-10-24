@@ -36,12 +36,16 @@ fn bench_hash_only(c: &mut Criterion) {
 			})
 		});
 
-		group.bench_with_input(BenchmarkId::new("hash_variable_length_bytes", size), &data, |b, data| {
-			b.iter(|| {
-				let result = hasher.hash_variable_length_bytes(black_box(data));
-				black_box(result)
-			})
-		});
+		group.bench_with_input(
+			BenchmarkId::new("hash_variable_length_bytes", size),
+			&data,
+			|b, data| {
+				b.iter(|| {
+					let result = hasher.hash_variable_length_bytes(black_box(data));
+					black_box(result)
+				})
+			},
+		);
 	}
 
 	// Test hashing field elements directly
@@ -57,12 +61,16 @@ fn bench_hash_only(c: &mut Criterion) {
 			})
 		});
 
-		group.bench_with_input(BenchmarkId::new("hash_variable_length_felts", count), &felts, |b, felts| {
-			b.iter(|| {
-				let result = hasher.hash_variable_length(black_box(felts.clone()));
-				black_box(result)
-			})
-		});
+		group.bench_with_input(
+			BenchmarkId::new("hash_variable_length_felts", count),
+			&felts,
+			|b, felts| {
+				b.iter(|| {
+					let result = hasher.hash_variable_length(black_box(felts.clone()));
+					black_box(result)
+				})
+			},
+		);
 	}
 
 	group.finish();
