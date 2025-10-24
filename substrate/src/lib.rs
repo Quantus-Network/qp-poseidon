@@ -16,7 +16,10 @@ use core::{
 };
 use p3_field::integers::QuotientMap;
 use p3_goldilocks::Goldilocks;
-use qp_poseidon_core::{try_digest_bytes_to_felts, u128_to_felts, u64_to_felts, Poseidon2Core};
+use qp_poseidon_core::{
+	serialization::try_digest_bytes_to_felts, serialization::u128_to_felts,
+	serialization::u64_to_felts, Poseidon2Core,
+};
 use scale_info::TypeInfo;
 use sp_core::{Hasher, H256};
 use sp_storage::StateVersion;
@@ -27,7 +30,7 @@ use serde::{Deserialize, Serialize};
 
 // Re-export core functionality for convenience
 pub use qp_poseidon_core::{
-	digest_felts_to_bytes, injective_bytes_to_felts, injective_string_to_felts,
+	serialization::injective_bytes_to_felts, serialization::injective_string_to_felts,
 	MIN_FIELD_ELEMENT_PREIMAGE_LEN,
 };
 
@@ -69,14 +72,14 @@ impl PoseidonHasher {
 	}
 
 	/// Hash field elements without any padding
-	pub fn hash_no_pad(x: Vec<Goldilocks>) -> [u8; 32] {
+	pub fn hash_variable_length(x: Vec<Goldilocks>) -> [u8; 32] {
 		let hasher = Poseidon2Core::new();
-		hasher.hash_no_pad(x)
+		hasher.hash_variable_length(x)
 	}
 
-	pub fn hash_no_pad_bytes(x: &[u8]) -> [u8; 32] {
+	pub fn hash_variable_length_bytes(x: &[u8]) -> [u8; 32] {
 		let hasher = Poseidon2Core::new();
-		hasher.hash_no_pad_bytes(x)
+		hasher.hash_variable_length_bytes(x)
 	}
 
 	/// Hash with 512-bit output by hashing input, then hashing the result, and concatenating both
@@ -89,10 +92,10 @@ impl PoseidonHasher {
 	/// This function should only be used to compute the quantus storage key for Transfer Proofs
 	/// It breaks up the bytes input in a specific way that mimics how our zk-circuit does it
 	pub fn hash_storage<AccountId: Decode + Encode + MaxEncodedLen>(x: &[u8]) -> [u8; 32] {
-		let max_encoded_len = u64::max_encoded_len() +
-			AccountId::max_encoded_len() +
-			AccountId::max_encoded_len() +
-			u128::max_encoded_len();
+		let max_encoded_len = u64::max_encoded_len()
+			+ AccountId::max_encoded_len()
+			+ AccountId::max_encoded_len()
+			+ u128::max_encoded_len();
 
 		debug_assert!(
 			x.len() == max_encoded_len,
@@ -114,13 +117,13 @@ impl PoseidonHasher {
 				.expect("failed to convert digest bytes to felts"),
 		);
 		felts.extend(u128_to_felts::<Goldilocks>(amount));
-		PoseidonHasher::hash_no_pad(felts)
+		PoseidonHasher::hash_variable_length(felts)
 	}
 
 	pub fn double_hash_felts(felts: Vec<Goldilocks>) -> [u8; 32] {
 		let poseidon = Poseidon2Core::new();
-		let inner_hash = poseidon.hash_no_pad(felts);
-		poseidon.hash_no_pad(Self::digest_bytes_to_felts(&inner_hash))
+		let inner_hash = poseidon.hash_variable_length(felts);
+		poseidon.hash_variable_length(Self::digest_bytes_to_felts(&inner_hash))
 	}
 
 	/// Convert bytes to field elements for digest operations (8 bytes per element)
@@ -330,7 +333,7 @@ mod tests {
 		assert_eq!(hash512, hash512_2);
 
 		// First 32 bytes should match regular hash
-		let regular_hash = PoseidonHasher::hash_no_pad_bytes(input);
+		let regular_hash = PoseidonHasher::hash_variable_length_bytes(input);
 		assert_eq!(&hash512[0..32], &regular_hash);
 	}
 
