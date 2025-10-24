@@ -62,16 +62,10 @@ impl Hasher for PoseidonHasher {
 }
 
 impl PoseidonHasher {
-	/// Hash field elements with padding to ensure consistent circuit behavior
-	pub fn hash_padded_felts(x: Vec<Goldilocks>) -> [u8; 32] {
-		let hasher = Poseidon2Core::new();
-		hasher.hash_padded_felts(x)
-	}
-
 	/// Hash bytes with padding to ensure consistent circuit behavior
 	pub fn hash_padded(x: &[u8]) -> [u8; 32] {
 		let hasher = Poseidon2Core::new();
-		hasher.hash_padded(x)
+		hasher.hash_padded_bytes::<MIN_FIELD_ELEMENT_PREIMAGE_LEN>(x)
 	}
 
 	/// Hash field elements without any padding
@@ -110,16 +104,16 @@ impl PoseidonHasher {
 		let mut y = x;
 		let (transfer_count, from_account, to_account, amount): (u64, AccountId, AccountId, u128) =
 			Decode::decode(&mut y).expect("already asserted input length. qed");
-		felts.extend(u64_to_felts(transfer_count));
+		felts.extend(u64_to_felts::<Goldilocks>(transfer_count));
 		felts.extend(
-			try_digest_bytes_to_felts(&from_account.encode())
+			try_digest_bytes_to_felts::<Goldilocks>(&from_account.encode())
 				.expect("failed to convert digest bytes to felts"),
 		);
 		felts.extend(
-			try_digest_bytes_to_felts(&to_account.encode())
+			try_digest_bytes_to_felts::<Goldilocks>(&to_account.encode())
 				.expect("failed to convert digest bytes to felts"),
 		);
-		felts.extend(u128_to_felts(amount));
+		felts.extend(u128_to_felts::<Goldilocks>(amount));
 		PoseidonHasher::hash_no_pad(felts)
 	}
 
@@ -207,7 +201,7 @@ mod tests {
 		// Test that the wrapper produces the same results as the core implementation
 		let input = b"test data";
 		let hasher = Poseidon2Core::new();
-		let core_hash = hasher.hash_padded(input);
+		let core_hash = hasher.hash_padded_bytes::<MIN_FIELD_ELEMENT_PREIMAGE_LEN>(input);
 		let wrapper_hash = PoseidonHasher::hash_padded(input);
 		assert_eq!(core_hash, wrapper_hash);
 	}

@@ -6,7 +6,7 @@ homepage.workspace = true
 repository.workspace = true
 license.workspace = true
 edition.workspace = true
-description = "Pure Poseidon2 hash implementation using plonky3 field arithmetic - no external dependencies"
+description = "Poseidon2 hash core over Goldilocks with a Plonky2/Plonky3-agnostic compatibility layer"
 keywords = [
 	"cryptography",
 	"hash-functions",
@@ -17,21 +17,34 @@ keywords = [
 categories = ["cryptography", "no-std"]
 
 [dependencies]
-
-p3-goldilocks.workspace = true
-p3-poseidon2.workspace = true
-p3-field.workspace = true
-p3-symmetric.workspace = true
+# Common (no_std-friendly; we seed ChaCha from a fixed value)
 rand.workspace = true
 rand_chacha.workspace = true
+
+# Plonky3 stack
+p3-goldilocks = { workspace = true, optional = true }
+p3-poseidon2 = { workspace = true, optional = true }
+p3-field = { workspace = true, optional = true }
+p3-symmetric = { workspace = true, optional = true }
+
+# Plonky2 stack
+qp-plonky2 = { workspace = true, optional = true }
 
 [dev-dependencies]
 hex.workspace = true
 criterion.workspace = true
 
 [features]
-default = []
-std = []
+# Keep no_std by default; choose Plonky3 as the default backend to preserve current behavior.
+default = ["p3"]
+std = [] # forward-compatible if you later want std-only niceties
+p3 = [
+	"dep:p3-field",
+	"dep:p3-goldilocks",
+	"dep:p3-poseidon2",
+	"dep:p3-symmetric",
+]
+p2 = ["dep:qp-plonky2"]
 
 [[bench]]
 name = "poseidon_benchmarks"
