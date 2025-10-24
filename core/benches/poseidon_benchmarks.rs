@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use p3_field::integers::QuotientMap;
 use p3_goldilocks::Goldilocks;
-use qp_poseidon_core::{injective_bytes_to_felts, Poseidon2Core};
+use qp_poseidon_core::{serialization::injective_bytes_to_felts, Poseidon2Core};
 
 /// Generate test data of varying sizes for benchmarking
 fn generate_test_data(size: usize) -> Vec<u8> {
@@ -36,9 +36,9 @@ fn bench_hash_only(c: &mut Criterion) {
 			})
 		});
 
-		group.bench_with_input(BenchmarkId::new("hash_no_pad_bytes", size), &data, |b, data| {
+		group.bench_with_input(BenchmarkId::new("hash_variable_length_bytes", size), &data, |b, data| {
 			b.iter(|| {
-				let result = hasher.hash_no_pad_bytes(black_box(data));
+				let result = hasher.hash_variable_length_bytes(black_box(data));
 				black_box(result)
 			})
 		});
@@ -52,14 +52,14 @@ fn bench_hash_only(c: &mut Criterion) {
 		group.throughput(Throughput::Elements(count as u64));
 		group.bench_with_input(BenchmarkId::new("hash_padded_felts", count), &felts, |b, felts| {
 			b.iter(|| {
-				let result = hasher.hash_no_pad(black_box(felts.clone()));
+				let result = hasher.hash_variable_length(black_box(felts.clone()));
 				black_box(result)
 			})
 		});
 
-		group.bench_with_input(BenchmarkId::new("hash_no_pad_felts", count), &felts, |b, felts| {
+		group.bench_with_input(BenchmarkId::new("hash_variable_length_felts", count), &felts, |b, felts| {
 			b.iter(|| {
-				let result = hasher.hash_no_pad(black_box(felts.clone()));
+				let result = hasher.hash_variable_length(black_box(felts.clone()));
 				black_box(result)
 			})
 		});
@@ -92,12 +92,12 @@ fn bench_create_and_hash(c: &mut Criterion) {
 		);
 
 		group.bench_with_input(
-			BenchmarkId::new("new_and_hash_no_pad_bytes", size),
+			BenchmarkId::new("new_and_hash_variable_length_bytes", size),
 			&data,
 			|b, data| {
 				b.iter(|| {
 					let hasher = Poseidon2Core::new();
-					let result = hasher.hash_no_pad_bytes(black_box(data));
+					let result = hasher.hash_variable_length_bytes(black_box(data));
 					black_box(result)
 				})
 			},
@@ -116,19 +116,19 @@ fn bench_create_and_hash(c: &mut Criterion) {
 			|b, felts| {
 				b.iter(|| {
 					let hasher = Poseidon2Core::new();
-					let result = hasher.hash_no_pad(black_box(felts.clone()));
+					let result = hasher.hash_variable_length(black_box(felts.clone()));
 					black_box(result)
 				})
 			},
 		);
 
 		group.bench_with_input(
-			BenchmarkId::new("new_and_hash_no_pad_felts", count),
+			BenchmarkId::new("new_and_hash_variable_length_felts", count),
 			&felts,
 			|b, felts| {
 				b.iter(|| {
 					let hasher = Poseidon2Core::new();
-					let result = hasher.hash_no_pad(black_box(felts.clone()));
+					let result = hasher.hash_variable_length(black_box(felts.clone()));
 					black_box(result)
 				})
 			},
