@@ -193,8 +193,8 @@ pub fn injective_string_to_felts<G: GoldiCompat>(input: &str) -> Vec<G> {
 mod tests {
 	use super::*;
 	use crate::Goldilocks;
-	use alloc::vec;
-	use p3_field::integers::QuotientMap;
+	use alloc::{format, string::String, vec};
+	use p3_field::{integers::QuotientMap, PrimeCharacteristicRing, PrimeField64};
 
 	#[test]
 	fn test_utility_functions() {
@@ -225,4 +225,337 @@ mod tests {
 		let result = try_injective_felts_to_bytes(&malformed_felts);
 		assert!(result.is_err(), "Malformed input should return an error");
 	}
+
+	#[test]
+	fn test_u64_round_trip() {
+		let test_values = vec![
+			0u64,
+			1u64,
+			0xFFFFFFFFu64,
+			0x1234567890ABCDEFu64,
+			u64::MAX,
+			0x8000000000000000u64, // 2^63
+			0x123456789ABCDEFu64,
+		];
+
+		for &original in &test_values {
+			let felts = u64_to_felts::<Goldilocks>(original);
+			assert_eq!(felts.len(), 2, "u64 should convert to exactly 2 felts");
+
+			// Reconstruct the u64 from felts
+			let high = felts[0].as_canonical_u64();
+			let low = felts[1].as_canonical_u64();
+			let reconstructed = (high << 32) | low;
+
+			assert_eq!(original, reconstructed, "u64 round-trip failed for {}", original);
+		}
+	}
+
+	#[test]
+	fn test_u128_round_trip() {
+		let test_values = vec![
+			0u128,
+			1u128,
+			0xFFFFFFFFu128,
+			0x123456789ABCDEF0123456789ABCDEFu128,
+			u128::MAX,
+			0x80000000000000000000000000000000u128, // 2^127
+			0x12345678_9ABCDEF0_12345678_9ABCDEFu128,
+		];
+
+		for &original in &test_values {
+			let felts = u128_to_felts::<Goldilocks>(original);
+			assert_eq!(felts.len(), 4, "u128 should convert to exactly 4 felts");
+
+			// Reconstruct the u128 from felts
+			let mut reconstructed = 0u128;
+			for (i, felt) in felts.iter().enumerate() {
+				let shift = 96 - 32 * i;
+				reconstructed |= (felt.as_canonical_u64() as u128) << shift;
+			}
+
+			assert_eq!(original, reconstructed, "u128 round-trip failed for {}", original);
+		}
+	}
+
+	#[test]
+	fn test_injective_bytes_round_trip() {
+		let test_cases = vec![
+			vec![],
+			vec![0u8],
+			vec![1u8, 2u8, 3u8],
+			vec![255u8; 1],
+			vec![255u8; 4],  // exactly one felt
+			vec![255u8; 8],  // two felts
+			vec![255u8; 15], // partial last felt
+			vec![255u8; 32], // multiple felts
+			b"hello world".to_vec(),
+			b"The quick brown fox jumps over the lazy dog".to_vec(),
+			(0u8..32).collect(), // range of byte values
+		];
+
+		for original in test_cases {
+			let felts = injective_bytes_to_felts::<Goldilocks>(&original);
+			let reconstructed = try_injective_felts_to_bytes(&felts)
+				.expect(&format!("Failed to reconstruct bytes for input: {:?}", original));
+
+			assert_eq!(
+				original, reconstructed,
+				"Injective bytes round-trip failed.\nOriginal: {:?}\nReconstructed: {:?}",
+				original, reconstructed
+			);
+		}
+	}
+
+	#[test]
+	fn test_injective_string_round_trip() {
+		let long_string = "A".repeat(100);
+		let test_strings = vec![
+			"",
+			"a",
+			"hello",
+			"hello world",
+			"The quick brown fox jumps over the lazy dog",
+			"UTF-8: 🦀 Rust 🚀 💯",
+			"Numbers: 1234567890",
+			"Special chars: !@#$%^&*()_+-=[]{}|;':\",./<>?",
+			"Newlines\nand\ttabs",
+			&long_string, // long string
+		];
+
+		for &original in test_strings.iter() {
+			let felts = injective_string_to_felts::<Goldilocks>(&original);
+			let reconstructed_bytes = try_injective_felts_to_bytes(&felts)
+				.expect(&format!("Failed to reconstruct string: {}", original));
+			let reconstructed = String::from_utf8(reconstructed_bytes)
+				.expect(&format!("Reconstructed bytes are not valid UTF-8 for: {}", original));
+
+			assert_eq!(original, reconstructed, "String round-trip failed for: '{}'", original);
+		}
+	}
+
+	#[test]
+	fn test_digest_bytes_round_trip() {
+		// Test with inputs that fit within field order (avoid values that exceed it)
+		let test_cases = vec![[0u8; 32], {
+			let mut bytes = [0u8; 32];
+			for i in 0..32 {
+				bytes[i] = (i * i % 200) as u8; // Keep values reasonable
+			}
+			bytes
+		}];
+
+		for original in test_cases {
+			let felts = try_digest_bytes_to_felts::<Goldilocks>(&original)
+				.expect(&format!("Failed to convert bytes to felts: {:?}", original));
+			let reconstructed = digest_felts_to_bytes(&[felts[0], felts[1], felts[2], felts[3]]);
+			assert_eq!(
+				original, reconstructed,
+				"Digest bytes round-trip failed.\nOriginal: {:?}\nReconstructed: {:?}",
+				original, reconstructed
+			);
+		}
+	}
+
+	#[test]
+	fn test_digest_bytes_partial_round_trip() {
+		// Test with smaller inputs that are valid
+		let test_cases = vec![
+			vec![],
+			vec![42u8],
+			vec![1u8, 2u8, 3u8, 4u8],
+			vec![100u8; 8], // one felt worth, reasonable values
+			vec![50u8; 16], // two felts worth
+			vec![25u8; 24], // three felts worth
+		];
+
+		for original in test_cases {
+			let felts = try_digest_bytes_to_felts::<Goldilocks>(&original)
+				.expect(&format!("Failed to convert bytes to felts: {:?}", original));
+
+			// Pad felts to 4 elements for digest (fill with zeros if needed)
+			let mut padded_felts = vec![Goldilocks::ZERO; 4];
+			for (i, &felt) in felts.iter().enumerate().take(4) {
+				padded_felts[i] = felt;
+			}
+
+			let reconstructed = digest_felts_to_bytes(&[
+				padded_felts[0],
+				padded_felts[1],
+				padded_felts[2],
+				padded_felts[3],
+			]);
+
+			// For partial inputs, the reconstructed should be padded to 32 bytes
+			assert_eq!(reconstructed.len(), 32, "Digest output should always be 32 bytes");
+
+			// The original bytes should match the beginning of the reconstructed bytes
+			if !original.is_empty() {
+				assert_eq!(
+					&reconstructed[..original.len()],
+					&original[..],
+					"Digest partial round-trip failed.\nOriginal: {:?}\nReconstructed prefix: {:?}",
+					original,
+					&reconstructed[..original.len()]
+				);
+			}
+
+			// The padding should be zeros
+			for &byte in &reconstructed[original.len()..] {
+				assert_eq!(byte, 0, "Padding bytes should be zero");
+			}
+		}
+	}
+
+	#[test]
+	fn test_digest_bytes_field_order_validation() {
+		// Test that values >= field order are rejected
+		let order = <Goldilocks as PrimeField64>::ORDER_U64;
+
+		// First test that order - 1 is accepted
+		let under_order_bytes = (order - 1).to_le_bytes();
+		let _felts = try_digest_bytes_to_felts::<Goldilocks>(&under_order_bytes)
+			.expect("Value < field order should be accepted");
+
+		// Now test that values >= field order are rejected
+		let order_bytes = order.to_le_bytes();
+		let result = try_digest_bytes_to_felts::<Goldilocks>(&order_bytes);
+		assert!(result.is_err(), "Field order value should be rejected");
+
+		// Create a byte array that represents field order + 1
+		let mut over_order_bytes = [0u8; 16];
+		over_order_bytes[..8].copy_from_slice(&(order + 1).to_le_bytes());
+		let result = try_digest_bytes_to_felts::<Goldilocks>(&over_order_bytes);
+		assert!(result.is_err(), "Value > field order should be rejected");
+	}
+
+	#[test]
+	fn test_edge_cases() {
+		// Test empty input
+		let empty_bytes = vec![];
+		let felts = injective_bytes_to_felts::<Goldilocks>(&empty_bytes);
+		let reconstructed = try_injective_felts_to_bytes(&felts).unwrap();
+		assert_eq!(empty_bytes, reconstructed, "Empty bytes round-trip failed");
+
+		// Test single byte values
+		for byte_val in [0u8, 1u8, 42u8, 127u8, 255u8] {
+			let original = vec![byte_val];
+			let felts = injective_bytes_to_felts::<Goldilocks>(&original);
+			let reconstructed = try_injective_felts_to_bytes(&felts).unwrap();
+			assert_eq!(original, reconstructed, "Single byte {} round-trip failed", byte_val);
+		}
+
+		// Test boundary conditions for felt alignment
+		for size in 1..=12 {
+			let original = vec![42u8; size];
+			let felts = injective_bytes_to_felts::<Goldilocks>(&original);
+			let reconstructed = try_injective_felts_to_bytes(&felts).unwrap();
+			assert_eq!(original, reconstructed, "Size {} bytes round-trip failed", size);
+		}
+	}
+
+	#[test]
+	fn test_malformed_input_error_cases() {
+		// Test malformed felts that don't have proper terminator
+		let malformed_cases = vec![
+			// No terminator at all - all non-terminator values
+			vec![Goldilocks::from_int(0x12345678), Goldilocks::from_int(0x1ABCDEF0)],
+			// Wrong terminator pattern - should be [1,0,0,0] not [2,0,0,0]
+			vec![
+				Goldilocks::from_int(0x12345678),
+				Goldilocks::from_int(0x00000002), // should be 1 followed by zeros
+			],
+			// All high values that don't form proper termination
+			vec![Goldilocks::from_int(0x7FFFFFFF), Goldilocks::from_int(0x7FFFFFFF)],
+		];
+
+		for malformed_felts in &malformed_cases {
+			let result = try_injective_felts_to_bytes(&malformed_felts);
+			assert!(result.is_err(), "Malformed input should return error: {:?}", malformed_felts);
+		}
+	}
+
+	#[test]
+	#[cfg(all(feature = "p2", feature = "p3"))]
+	fn test_consistency_between_backends() {
+		// This test ensures that P2 and P3 backends produce identical results
+		// when converting the same data to/from field elements
+		use crate::serialization::{p2_backend, p3_backend};
+
+		let test_data = vec![
+			vec![],
+			vec![42u8],
+			vec![0u8, 1u8, 2u8, 3u8],
+			b"hello world".to_vec(),
+			vec![100u8; 16],
+			(0u8..32).collect(),
+		];
+
+		for original in test_data {
+			// Test injective bytes conversion consistency
+			let p2_felts = injective_bytes_to_felts::<p2_backend::GF>(&original);
+			let p3_felts = injective_bytes_to_felts::<p3_backend::GF>(&original);
+
+			// Both should produce the same number of field elements
+			assert_eq!(
+				p2_felts.len(),
+				p3_felts.len(),
+				"Different number of felts for input: {:?}",
+				original
+			);
+
+			// Each corresponding field element should have the same u64 representation
+			for (i, (p2_felt, p3_felt)) in p2_felts.iter().zip(p3_felts.iter()).enumerate() {
+				assert_eq!(
+					p2_felt.to_u64(),
+					p3_felt.to_u64(),
+					"Field element {} differs between backends for input: {:?}",
+					i,
+					original
+				);
+			}
+
+			// Test round-trip consistency
+			let p2_reconstructed = try_injective_felts_to_bytes(&p2_felts).unwrap();
+			let p3_reconstructed = try_injective_felts_to_bytes(&p3_felts).unwrap();
+
+			assert_eq!(original, p2_reconstructed, "P2 round-trip failed");
+			assert_eq!(original, p3_reconstructed, "P3 round-trip failed");
+			assert_eq!(p2_reconstructed, p3_reconstructed, "Backend reconstructions differ");
+		}
+
+		// Test u64/u128 conversion consistency
+		let u64_test_values = vec![0u64, 1u64, 0xFFFFFFFFu64, 0x1234567890ABCDEFu64];
+		for &value in &u64_test_values {
+			let p2_felts = u64_to_felts::<p2_backend::GF>(value);
+			let p3_felts = u64_to_felts::<p3_backend::GF>(value);
+
+			assert_eq!(p2_felts.len(), p3_felts.len());
+			for (p2_felt, p3_felt) in p2_felts.iter().zip(p3_felts.iter()) {
+				assert_eq!(
+					p2_felt.to_u64(),
+					p3_felt.to_u64(),
+					"u64 conversion differs between backends for value: {}",
+					value
+				);
+			}
+		}
+
+		let u128_test_values = vec![0u128, 1u128, 0x123456789ABCDEF0123456789ABCDEFu128];
+		for &value in &u128_test_values {
+			let p2_felts = u128_to_felts::<p2_backend::GF>(value);
+			let p3_felts = u128_to_felts::<p3_backend::GF>(value);
+
+			assert_eq!(p2_felts.len(), p3_felts.len());
+			for (p2_felt, p3_felt) in p2_felts.iter().zip(p3_felts.iter()) {
+				assert_eq!(
+					p2_felt.to_u64(),
+					p3_felt.to_u64(),
+					"u128 conversion differs between backends for value: {}",
+					value
+				);
+			}
+		}
+	}
+
 }
