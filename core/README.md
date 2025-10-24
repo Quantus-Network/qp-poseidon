@@ -7,7 +7,6 @@ A pure Rust implementation of the Poseidon hash function using plonky3 field ari
 - **No-std compatible**: Works in embedded and constrained environments
 - **Pure cryptography**: No blockchain or external dependencies
 - **Circuit-compatible**: Padding behavior matches zero-knowledge circuit implementations
-- **Flexible**: Support for both padded and unpadded hashing
 - **Field arithmetic**: Built on battle-tested plonky3 Goldilocks field
 
 ### Basic Usage

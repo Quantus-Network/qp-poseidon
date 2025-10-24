@@ -7,9 +7,7 @@ pub mod constants;
 
 pub mod serialization;
 
-use crate::serialization::{
-	digest_felts_to_bytes, injective_bytes_to_felts
-};
+use crate::serialization::{digest_felts_to_bytes, injective_bytes_to_felts};
 use alloc::vec::Vec;
 use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::{Goldilocks, Poseidon2Goldilocks};
@@ -23,7 +21,7 @@ pub const MIN_FIELD_ELEMENT_PREIMAGE_LEN: usize = 189;
 const POSEIDON2_SEED: u64 = 0x3141592653589793;
 
 // 4 felt output => 4 felt rate per round => capacity = 12 - 4 = 8
-// => 256 bits of classical preimage security => 128 bits of quantum preimage security
+// => 256 bits of classical preimage security => 128 bits security against Grover's algorithm
 const WIDTH: usize = 12;
 const RATE: usize = 4;
 
@@ -96,9 +94,7 @@ impl Poseidon2Core {
 	pub fn hash_variable_length(&self, x: Vec<Goldilocks>) -> [u8; 32] {
 		let state = self.hash_variable_length_state(x);
 
-		let result = &state[..RATE];
-
-		digest_felts_to_bytes(result)
+		digest_felts_to_bytes(&state[..RATE].try_into().expect("Should never fail"))
 	}
 
 	/// Hash field elements with message-end padding of 1 and fill 0 to alignment to RATE
@@ -138,9 +134,9 @@ impl Poseidon2Core {
 	/// Hash with 512-bit output by squeezing the sponge twice
 	pub fn hash_squeeze_twice(&self, x: &[u8]) -> [u8; 64] {
 		let mut state = self.hash_variable_length_state(injective_bytes_to_felts(x));
-		let h1 = digest_felts_to_bytes(&state[..RATE]);
+		let h1 = digest_felts_to_bytes(&state[..RATE].try_into().expect("Should never fail"));
 		self.poseidon2.permute_mut(&mut state);
-		let h2 = digest_felts_to_bytes(&state[..RATE]);
+		let h2 = digest_felts_to_bytes(&state[..RATE].try_into().expect("Should never fail"));
 
 		let mut result = [0u8; 64];
 		result[0..32].copy_from_slice(&h1);
@@ -280,17 +276,17 @@ mod tests {
 	fn test_known_value_hashes() {
 		let vectors = [
 			(
-			    vec![], 
-				"405e03f9a0aea73447ad4310e2b225167482e2f2a78d5b402bbfef7b671bfae7",
-				"1c72d2c98082a45bf49dc58bc06fd3f4a5155aa3bc924267fea3735ccdd59b34"
+				vec![],
+				"89d1c547f1b828c8659fe0600c90d58e95b435d91d04439b67c83b88a679380a",
+				"4d8d22af81f6c27a005a07028590ef4ee480f6c4b93f813daf9de47a07c8ae86",
 			),
 			(
-			    vec![0u8], 
+				vec![0u8],
 				"dbb29ba5d3bf3246356a8918dc2808ea5130a9ae02afefe360703afc848d3769",
 				"8f5b42e350ff5a12788210c86c2bcd49243b8f9350de818b3b0c56839a42ebad",
 			),
 			(
-			    vec![0u8, 0u8], 
+				vec![0u8, 0u8],
 				"23b58c9f2aa60a1677e9bb360be87db2f48f52e8bd2702948f7f11b36cb1d607",
 				"3e6ee24fb61a22f4d825b72fc8ebd359e3b3b9566e246c71c3e450ebe3262f9c",
 			),
@@ -350,7 +346,7 @@ mod tests {
 				"131020b2e74819343f8568258ae2e9717e9b2253d57baabab78a518bc7499a8b",
 			),
 			(
-			    vec![255u8; 32], 
+				vec![255u8; 32],
 				"fac64f5ed32acfa79a37cd5d1c4e48c67c500ae48043a61a95e51a2e181527ec",
 				"05a90ac8e3c4b7635fa3735c3a9c4fef620479fa68a9e4ae1421c39aa6939125",
 			),
@@ -382,11 +378,8 @@ mod tests {
 				"input: 0x{}",
 				hex::encode(input)
 			);
-
 		}
-
 	}
-
 
 	#[test]
 	fn test_hash_variable_length() {
@@ -404,7 +397,7 @@ mod tests {
 	#[test]
 	fn test_deterministic_constants() {
 		// Test that using the same seed produces the same results
-		let hasher1 = Poseidon2Core::new();
+		let hasher1 = Poseidon2Core::new_unoptimized();
 		let input = b"test deterministic";
 		let hash1 = hasher1.hash_padded_bytes::<C>(input);
 

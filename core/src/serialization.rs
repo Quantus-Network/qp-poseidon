@@ -1,3 +1,4 @@
+use crate::RATE;
 use alloc::vec::Vec;
 
 const BIT_32_LIMB_MASK: u64 = 0xFFFF_FFFF;
@@ -74,33 +75,31 @@ pub fn u64_to_felts<G: GoldiCompat>(num: u64) -> Vec<G> {
 	alloc::vec![G::from_u64((num >> 32) & BIT_32_LIMB_MASK), G::from_u64(num & BIT_32_LIMB_MASK),]
 }
 
-/// Injective, 4 bytes → 1 felt (with inline 0x01 terminator in the last word if needed).
+/// Injective, 4 bytes → 1 felt, input is variable-length padded with 1, 0... to align with u32 size
 /// NOTE: we do 32 bit limbs to achieve injectivity. We could use a larger size up to 63 bits but
 /// chose to do 32 bits for simplicity.
 pub fn injective_bytes_to_felts<G: GoldiCompat>(input: &[u8]) -> Vec<G> {
 	const BYTES_PER_ELEMENT: usize = 4;
 	let mut out = Vec::new();
-	let chunks = input.chunks(BYTES_PER_ELEMENT);
-	let last_idx = chunks.len().saturating_sub(1);
-	let mut unpadded = false;
 
-	for (i, chunk) in chunks.enumerate() {
+	let mut padded_input = input.to_vec();
+	// Mark end with 1u8
+	padded_input.push(1u8);
+	let mod_len = padded_input.len() % BYTES_PER_ELEMENT;
+	if mod_len != 0 {
+		// Fill to BYTES_PER_ELEMENT alignment with 0u8s
+		padded_input.resize(padded_input.len() + BYTES_PER_ELEMENT - mod_len, 0u8);
+	}
+
+	let chunks = padded_input.chunks(BYTES_PER_ELEMENT);
+	assert!(padded_input.chunks_exact(BYTES_PER_ELEMENT).remainder().len() == 0);
+
+	for chunk in chunks {
 		let mut bytes = [0u8; BYTES_PER_ELEMENT];
-
-		if i == last_idx {
-			if chunk.len() < BYTES_PER_ELEMENT {
-				bytes[chunk.len()] = 1;
-			} else {
-				unpadded = true;
-			}
-		}
 		bytes[..chunk.len()].copy_from_slice(chunk);
 		out.push(G::from_u64(u32::from_le_bytes(bytes) as u64));
 	}
 
-	if unpadded {
-		out.push(G::from_u64(u32::from_le_bytes([1, 0, 0, 0]) as u64));
-	}
 	out
 }
 
@@ -127,35 +126,32 @@ pub fn try_digest_bytes_to_felts<G: GoldiCompat>(
 	Ok(out)
 }
 
-pub fn digest_felts_to_bytes<G: GoldiCompat>(input: &[G]) -> [u8; 32] {
-	const DIGEST_BYTES_PER_ELEMENT: usize = 8;
+pub fn digest_felts_to_bytes<G: GoldiCompat>(input: &[G; RATE]) -> [u8; 32] {
+	// Convert exactly RATE felts to 32 bytes: RATE felts × 8 bytes/felt = 32 bytes
 	let mut bytes = [0u8; 32];
-
-	for (i, fe) in input.iter().enumerate() {
-		let start = i * DIGEST_BYTES_PER_ELEMENT;
-		if start >= 32 {
-			break;
-		}
-		let end = core::cmp::min(start + DIGEST_BYTES_PER_ELEMENT, 32);
-		let v_bytes = G::to_u64(*fe).to_le_bytes();
-		bytes[start..end].copy_from_slice(&v_bytes[..end - start]);
+	for i in 0..RATE {
+		let start = i * 8;
+		let end = start + 8;
+		bytes[start..end].copy_from_slice(&G::to_u64(input[i]).to_le_bytes());
 	}
 	bytes
 }
 
 /// Inverse of `injective_bytes_to_felts`.
 pub fn try_injective_felts_to_bytes<G: GoldiCompat>(input: &[G]) -> Result<Vec<u8>, &'static str> {
+	if input.is_empty() {
+		return Err("Expected non-empty input");
+	}
+
 	const BYTES_PER_ELEMENT: usize = 4;
 	let mut words: Vec<[u8; BYTES_PER_ELEMENT]> = Vec::with_capacity(input.len());
-	for fe in input {
-		words.push((G::to_u64(*fe) as u32).to_le_bytes());
-	}
-	if words.is_empty() {
-		return Ok(Vec::new());
+	for felt in input {
+		words.push((G::to_u64(*felt) as u32).to_le_bytes());
 	}
 
 	let mut out = Vec::new();
 
+	// If original input was u32 aligned, drop the last word
 	if words.last() == Some(&[1, 0, 0, 0]) {
 		for w in &words[..words.len() - 1] {
 			out.extend_from_slice(w);
@@ -163,10 +159,12 @@ pub fn try_injective_felts_to_bytes<G: GoldiCompat>(input: &[G]) -> Result<Vec<u
 		return Ok(out);
 	}
 
+	// The first n-1 words are normal
 	for w in &words[..words.len() - 1] {
 		out.extend_from_slice(w);
 	}
 
+	// The last word must remove the inline terminator
 	let last = words.last().unwrap();
 	let mut marker_idx = None;
 	for j in 0..BYTES_PER_ELEMENT {
@@ -193,28 +191,28 @@ pub fn injective_string_to_felts<G: GoldiCompat>(input: &str) -> Vec<G> {
 
 #[cfg(test)]
 mod tests {
-   	use super::*;
-    use crate::Goldilocks;
-    use alloc::vec;
-    use p3_field::integers::QuotientMap;
-    
-   	#[test]
+	use super::*;
+	use crate::Goldilocks;
+	use alloc::vec;
+	use p3_field::integers::QuotientMap;
+
+	#[test]
 	fn test_utility_functions() {
 		// Test u64_to_felts
 		let num = 0x1234567890ABCDEF;
 		let felts = u64_to_felts::<Goldilocks>(num);
 		assert_eq!(felts.len(), 2);
-   
+
 		// Test u128_to_felts
 		let large_num = 0x123456789ABCDEF0123456789ABCDEF0u128;
 		let felts = u128_to_felts::<Goldilocks>(large_num);
 		assert_eq!(felts.len(), 4);
-   
+
 		// Test string conversion
 		let text = "hello";
 		let felts = injective_string_to_felts::<Goldilocks>(text);
 		assert_eq!(felts.len(), 2);
-   
+
 		// Test round-trip conversion
 		let original_bytes = b"test data";
 		let felts = injective_bytes_to_felts::<Goldilocks>(original_bytes);
@@ -227,5 +225,4 @@ mod tests {
 		let result = try_injective_felts_to_bytes(&malformed_felts);
 		assert!(result.is_err(), "Malformed input should return an error");
 	}
-
 }
