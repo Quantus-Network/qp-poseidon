@@ -2,6 +2,9 @@
 
 extern crate alloc;
 
+#[cfg(feature = "p3")]
+pub mod constants;
+
 use alloc::vec::Vec;
 use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::{Goldilocks, Poseidon2Goldilocks};
@@ -96,10 +99,20 @@ impl Default for Poseidon2Core {
 }
 
 impl Poseidon2Core {
-	/// Create a new Poseidon2Core instance with deterministic constants
-	pub fn new() -> Self {
+	/// Create a new Poseidon2Core instance deriving constants
+	pub fn new_unoptimized() -> Self {
 		let mut rng = ChaCha20Rng::seed_from_u64(POSEIDON2_SEED);
 		let poseidon2 = Poseidon2Goldilocks::<12>::new_from_rng_128(&mut rng);
+		Self { poseidon2 }
+	}
+
+	/// Create an optimized Poseidon2Core instance using precomputed constants
+	///
+	/// This is significantly faster than `new_unoptimized()` since it avoids the expensive
+	/// constant derivation process on each instantiation.
+	#[cfg(feature = "p3")]
+	pub fn new() -> Self {
+		let poseidon2 = constants::create_optimized_poseidon2();
 		Self { poseidon2 }
 	}
 

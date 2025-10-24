@@ -2566,6 +2566,7 @@ version = "0.9.5"
 dependencies = [
  "criterion",
  "hex",
+ "once_cell",
  "p3-field",
  "p3-goldilocks",
  "p3-poseidon2",

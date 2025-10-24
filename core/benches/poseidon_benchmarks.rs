@@ -31,7 +31,7 @@ fn bench_hash_only(c: &mut Criterion) {
 		group.throughput(Throughput::Bytes(size as u64));
 		group.bench_with_input(BenchmarkId::new("hash_padded_bytes", size), &data, |b, data| {
 			b.iter(|| {
-				let result = hasher.hash_padded(black_box(data));
+				let result = hasher.hash_padded_bytes::<189>(black_box(data));
 				black_box(result)
 			})
 		});
@@ -52,7 +52,7 @@ fn bench_hash_only(c: &mut Criterion) {
 		group.throughput(Throughput::Elements(count as u64));
 		group.bench_with_input(BenchmarkId::new("hash_padded_felts", count), &felts, |b, felts| {
 			b.iter(|| {
-				let result = hasher.hash_padded_felts(black_box(felts.clone()));
+				let result = hasher.hash_no_pad(black_box(felts.clone()));
 				black_box(result)
 			})
 		});
@@ -85,7 +85,7 @@ fn bench_create_and_hash(c: &mut Criterion) {
 			|b, data| {
 				b.iter(|| {
 					let hasher = Poseidon2Core::new();
-					let result = hasher.hash_padded(black_box(data));
+					let result = hasher.hash_padded_bytes::<189>(black_box(data));
 					black_box(result)
 				})
 			},
@@ -116,7 +116,7 @@ fn bench_create_and_hash(c: &mut Criterion) {
 			|b, felts| {
 				b.iter(|| {
 					let hasher = Poseidon2Core::new();
-					let result = hasher.hash_padded_felts(black_box(felts.clone()));
+					let result = hasher.hash_no_pad(black_box(felts.clone()));
 					black_box(result)
 				})
 			},
@@ -152,6 +152,13 @@ fn bench_initialization(c: &mut Criterion) {
 	group.bench_function("new_with_seed", |b| {
 		b.iter(|| {
 			let hasher = Poseidon2Core::with_seed(black_box(12345));
+			black_box(hasher)
+		})
+	});
+
+	group.bench_function("new_unoptimized", |b| {
+		b.iter(|| {
+			let hasher = Poseidon2Core::new_unoptimized();
 			black_box(hasher)
 		})
 	});
@@ -197,7 +204,7 @@ fn bench_utility_functions(c: &mut Criterion) {
 			&data,
 			|b, data| {
 				b.iter(|| {
-					let result = injective_bytes_to_felts(black_box(data));
+					let result = injective_bytes_to_felts::<Goldilocks>(black_box(data));
 					black_box(result)
 				})
 			},
@@ -217,15 +224,83 @@ fn bench_initialization_overhead(c: &mut Criterion) {
 
 	group.bench_function("hash_with_existing_instance", |b| {
 		b.iter(|| {
-			let result = pre_initialized.hash_padded(black_box(&data));
+			let result = pre_initialized.hash_padded_bytes::<189>(black_box(&data));
 			black_box(result)
 		})
 	});
 
-	group.bench_function("hash_with_new_instance", |b| {
+	group.bench_function("hash_with_new_unoptimized_instance", |b| {
+		b.iter(|| {
+			let hasher = Poseidon2Core::new_unoptimized();
+			let result = hasher.hash_padded_bytes::<189>(black_box(&data));
+			black_box(result)
+		})
+	});
+
+	group.bench_function("hash_with_new_optimized_instance", |b| {
 		b.iter(|| {
 			let hasher = Poseidon2Core::new();
-			let result = hasher.hash_padded(black_box(&data));
+			let result = hasher.hash_padded_bytes::<189>(black_box(&data));
+			black_box(result)
+		})
+	});
+
+	group.finish();
+}
+
+/// Benchmark comparing optimized vs original initialization
+fn bench_optimized_vs_original(c: &mut Criterion) {
+	let mut group = c.benchmark_group("optimized_vs_original");
+
+	// Benchmark initialization only
+	group.bench_function("init_original", |b| {
+		b.iter(|| {
+			let hasher = Poseidon2Core::new_unoptimized();
+			black_box(hasher)
+		})
+	});
+
+	group.bench_function("init_optimized", |b| {
+		b.iter(|| {
+			let hasher = Poseidon2Core::new();
+			black_box(hasher)
+		})
+	});
+
+	// Benchmark init + hash for small data (where init cost matters most)
+	let small_data = generate_test_data(32);
+
+	group.bench_function("init_and_hash_original_32b", |b| {
+		b.iter(|| {
+			let hasher = Poseidon2Core::new_unoptimized();
+			let result = hasher.hash_padded_bytes::<189>(black_box(&small_data));
+			black_box(result)
+		})
+	});
+
+	group.bench_function("init_and_hash_optimized_32b", |b| {
+		b.iter(|| {
+			let hasher = Poseidon2Core::new();
+			let result = hasher.hash_padded_bytes::<189>(black_box(&small_data));
+			black_box(result)
+		})
+	});
+
+	// Benchmark with medium data
+	let medium_data = generate_test_data(256);
+
+	group.bench_function("init_and_hash_original_256b", |b| {
+		b.iter(|| {
+			let hasher = Poseidon2Core::new_unoptimized();
+			let result = hasher.hash_padded_bytes::<189>(black_box(&medium_data));
+			black_box(result)
+		})
+	});
+
+	group.bench_function("init_and_hash_optimized_256b", |b| {
+		b.iter(|| {
+			let hasher = Poseidon2Core::new();
+			let result = hasher.hash_padded_bytes::<189>(black_box(&medium_data));
 			black_box(result)
 		})
 	});
@@ -240,7 +315,8 @@ criterion_group!(
 	bench_initialization,
 	bench_hash_squeeze_twice,
 	bench_utility_functions,
-	bench_initialization_overhead
+	bench_initialization_overhead,
+	bench_optimized_vs_original
 );
 
 criterion_main!(benches);
