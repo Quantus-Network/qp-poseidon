@@ -83,7 +83,7 @@ impl Poseidon2Core {
 			x.resize(C, Goldilocks::ZERO);
 		}
 
-		self.hash_no_pad(x)
+		self.hash_variable_length(x)
 	}
 
 	/// Hash bytes with constant padding to size C to ensure consistent circuit behavior
@@ -92,17 +92,17 @@ impl Poseidon2Core {
 		self.hash_circuit_padding_felts::<C>(injective_bytes_to_felts(x))
 	}
 
-	/// TODO: Explicitly test edge cases here ([0, 0, 0, 1] and [0, 0, 0] should be distinct)
 	/// Hash field elements without any padding
-	pub fn hash_no_pad(&self, x: Vec<Goldilocks>) -> [u8; 32] {
-		let state = self.hash_no_pad_state(x);
+	pub fn hash_variable_length(&self, x: Vec<Goldilocks>) -> [u8; 32] {
+		let state = self.hash_variable_length_state(x);
 
 		let result = &state[..RATE];
 
 		digest_felts_to_bytes(result)
 	}
 
-	fn hash_no_pad_state(&self, mut x: Vec<Goldilocks>) -> [Goldilocks; WIDTH] {
+	/// Hash field elements with message-end padding of 1 and fill 0 to alignment to RATE
+	fn hash_variable_length_state(&self, mut x: Vec<Goldilocks>) -> [Goldilocks; WIDTH] {
 		let mut state = [Goldilocks::ZERO; WIDTH];
 
 		// Variable length padding according to https://eprint.iacr.org/2019/458.pdf
@@ -130,14 +130,14 @@ impl Poseidon2Core {
 	}
 
 	/// Hash bytes without any padding
-	/// NOTE: Not domain-separated from hash_no_pad; use with caution
-	pub fn hash_no_pad_bytes(&self, x: &[u8]) -> [u8; 32] {
-		self.hash_no_pad(injective_bytes_to_felts(x))
+	/// NOTE: Not domain-separated from hash_variable_length; use with caution
+	pub fn hash_variable_length_bytes(&self, x: &[u8]) -> [u8; 32] {
+		self.hash_variable_length(injective_bytes_to_felts(x))
 	}
 
 	/// Hash with 512-bit output by squeezing the sponge twice
 	pub fn hash_squeeze_twice(&self, x: &[u8]) -> [u8; 64] {
-		let mut state = self.hash_no_pad_state(injective_bytes_to_felts(x));
+		let mut state = self.hash_variable_length_state(injective_bytes_to_felts(x));
 		let h1 = digest_felts_to_bytes(&state[..RATE]);
 		self.poseidon2.permute_mut(&mut state);
 		let h2 = digest_felts_to_bytes(&state[..RATE]);
@@ -279,54 +279,121 @@ mod tests {
 	#[test]
 	fn test_known_value_hashes() {
 		let vectors = [
-			(vec![], "405e03f9a0aea73447ad4310e2b225167482e2f2a78d5b402bbfef7b671bfae7"),
-			(vec![0u8], "dbb29ba5d3bf3246356a8918dc2808ea5130a9ae02afefe360703afc848d3769"),
-			(vec![0u8, 0u8], "23b58c9f2aa60a1677e9bb360be87db2f48f52e8bd2702948f7f11b36cb1d607"),
+			(
+			    vec![], 
+				"405e03f9a0aea73447ad4310e2b225167482e2f2a78d5b402bbfef7b671bfae7",
+				"1c72d2c98082a45bf49dc58bc06fd3f4a5155aa3bc924267fea3735ccdd59b34"
+			),
+			(
+			    vec![0u8], 
+				"dbb29ba5d3bf3246356a8918dc2808ea5130a9ae02afefe360703afc848d3769",
+				"8f5b42e350ff5a12788210c86c2bcd49243b8f9350de818b3b0c56839a42ebad",
+			),
+			(
+			    vec![0u8, 0u8], 
+				"23b58c9f2aa60a1677e9bb360be87db2f48f52e8bd2702948f7f11b36cb1d607",
+				"3e6ee24fb61a22f4d825b72fc8ebd359e3b3b9566e246c71c3e450ebe3262f9c",
+			),
 			(
 				vec![0u8, 0u8, 0u8],
 				"1799097faca4e7faa34fa7e17c2e16ae281a655cd502f6ef9f1c993d74f161d6",
+				"34f4338a6f1b671062a3ac00b37ca05a47b43e16e589ccaa5b063416ba42356b",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8],
 				"5d1e9b2cdf43cce05de115f156dcf2062e3102341303613eeb1547886ebba4cc",
+				"7bac8c6bc49b0b750f2ce0912b815a2cb4ae20c75ac430850257882d9d321afa",
+			),
+			(
+				vec![0u8, 0u8, 0u8, 0u8, 0u8],
+				"d941bb3132ac34a919add937354f09cf302c5e972411c1854f2e5ebf5b054fc4",
+				"c95cfddb573adf4070b3d7c8d2dfbbee48b4b973d80cbda2b458abe7bb6f0def",
+			),
+			(
+				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+				"8d2fdb09cd31ab6fd59f0b429d50684a6425a7f21bc5e32e38ab19ced4fc5492",
+				"a4dc08d0a8c5ea44007462fe1fd8e45962d4ea85c420eab4140fbb30b5b5e111",
+			),
+			(
+				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+				"490936de1357c80889dd9fee7f0ee58e7d7fe4c11e66bda55fa860bb6b94cddd",
+				"b01975012df91d9f9f040c34655f23f3ec1f6d1738d85679e9848143756637c9",
+			),
+			(
+				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+				"eaa5c78853eac1ee6240512dd85077776ec909186fe46ec463e167790d768a40",
+				"eacd9e48d2e968131e48c8e69f2a211cc06c7778db6c5467348b45418fc7f585",
+			),
+			(
+				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+				"2d2822c6cc2fd816ceb90cd9561bb1f5eb1638c2574b838a16b426e01d929928",
+				"00df670e8ec0751d3fb9b5f0281d0af9a7a82f62ad35a21247a9d6117daec151",
+			),
+			(
+				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+				"9cd82ca4f742f54f62d577b3254d5138e4f5c9eea3f4173a6c1733c08cff79f2",
+				"6488c3c47c17114e3998bf90d6c50dc323a82e6e91768dca6977cfe152415ad5",
+			),
+			(
+				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+				"9794607d182df1504c1a5af25d51105332b4520c06e9c669669a4060e704b15c",
+				"a5ba11e5959cdb59e6b2b0d25d470d656caf59aae961b52c159ffd6e0f04baff",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 1u8],
 				"779f5f6d4ae11964fc2efd012bb691899ccc317ed9e186f9efdab73a2bf3af9e",
+				"6ffff0c97262139567c426e916c1fd70c924010153c366bb2a8957ea89902942",
 			),
 			(
 				vec![1u8, 2, 3, 4, 5, 6, 7, 8],
 				"ecdf30787278c049402e704b298c30c7787116d75e4dbcd8ce6b5757ed8833e5",
+				"131020b2e74819343f8568258ae2e9717e9b2253d57baabab78a518bc7499a8b",
 			),
-			(vec![255u8; 32], "fac64f5ed32acfa79a37cd5d1c4e48c67c500ae48043a61a95e51a2e181527ec"),
+			(
+			    vec![255u8; 32], 
+				"fac64f5ed32acfa79a37cd5d1c4e48c67c500ae48043a61a95e51a2e181527ec",
+				"05a90ac8e3c4b7635fa3735c3a9c4fef620479fa68a9e4ae1421c39aa6939125",
+			),
 			(
 				b"hello world".to_vec(),
 				"95d6a29c17bfd2149cda69c8becbc8cc33c527f39b3a2f7d12865272fd7f5677",
+				"fd1f5d7d4701c25bbdd5dd6e3be6abb474fffbaa402f814dce95f8283abbf3e7",
 			),
 			(
 				(0u8..32).collect::<Vec<u8>>(),
 				"66f2c7df65a0f456314999fcf95899e27a5a5436cb4f04d79f11f12f8f86f0e0",
+				"2e3e4a00be0d8520cddaf3000d98c1f1d73c19bfe9fe181694bfa9afdfce7687",
 			),
 		];
 		let poseidon = Poseidon2Core::new();
-		for (input, expected_hex) in vectors.iter() {
+		for (input, expected_hex1, expected_hex2) in vectors.iter() {
 			let hash = poseidon.hash_padded_bytes::<C>(input);
 			assert_eq!(
 				hex::encode(hash.as_slice()),
-				*expected_hex,
+				*expected_hex1,
 				"input: 0x{}",
 				hex::encode(input)
 			);
+
+			let hash2 = poseidon.hash_variable_length_bytes(input);
+			assert_eq!(
+				hex::encode(hash2.as_slice()),
+				*expected_hex2,
+				"input: 0x{}",
+				hex::encode(input)
+			);
+
 		}
+
 	}
 
 
 	#[test]
-	fn test_hash_no_pad() {
+	fn test_hash_variable_length() {
 		let hasher = Poseidon2Core::new();
 		let input = b"test";
 		let padded_hash = hasher.hash_padded_bytes::<C>(input);
-		let no_pad_hash = hasher.hash_no_pad_bytes(input);
+		let no_pad_hash = hasher.hash_variable_length_bytes(input);
 
 		// These should be different since one is padded and the other isn't
 		assert_ne!(padded_hash, no_pad_hash);
@@ -358,7 +425,7 @@ mod tests {
 		assert_eq!(hash512.len(), 64);
 
 		// First 32 bytes should be hash of input
-		let expected_first = hasher.hash_no_pad_bytes(input);
+		let expected_first = hasher.hash_variable_length_bytes(input);
 		assert_eq!(&hash512[0..32], &expected_first);
 
 		// Test deterministic
