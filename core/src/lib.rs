@@ -29,7 +29,7 @@ pub use serialization::p2_backend::GF as P2GF;
 pub use serialization::p3_backend::GF as P3GF;
 
 // Internal state for Poseidon2 hashing
-struct Poseidon2State {
+pub struct Poseidon2State {
 	poseidon2: Poseidon2Goldilocks<WIDTH>,
 	state: [Goldilocks; WIDTH],
 	buf: [Goldilocks; RATE],
