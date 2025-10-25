@@ -5,8 +5,9 @@ use p3_goldilocks::Goldilocks;
 use p3_poseidon2::ExternalLayerConstants;
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
-/// The same seed used in the main library
+// The same seed used in the main library
 const POSEIDON2_SEED: u64 = 0x3141592653589793;
+const WIDTH: usize = 12;
 
 fn main() {
 	// Generate the constants using the same method as the library
@@ -34,53 +35,53 @@ fn main() {
 	// Print imports and setup
 	println!("extern crate alloc;");
 	println!();
-	println!("use alloc::vec;");
 	println!("use alloc::vec::Vec;");
-	println!("use once_cell::sync::Lazy;");
 	println!("use p3_field::integers::QuotientMap;");
 	println!("use p3_goldilocks::{{Goldilocks, Poseidon2Goldilocks}};");
 	println!("use p3_poseidon2::{{ExternalLayerConstants, Poseidon2}};");
 	println!();
 
-	// Print internal constants as static Lazy<Vec<Goldilocks>>
-	println!("/// Pre-computed internal round constants for Poseidon2 with WIDTH=12");
-	println!("static POSEIDON2_INTERNAL_CONSTANTS_12: Lazy<Vec<Goldilocks>> = Lazy::new(|| {{");
-	println!("\tvec![");
-	for constant in internal_constants.iter() {
-		println!("\t\tGoldilocks::from_int(0x{:016x}u64),", constant.as_canonical_u64());
+	// Print internal constants as raw u64 array
+	println!("/// Raw u64 values for internal round constants");
+	println!("const POSEIDON2_INTERNAL_CONSTANTS_RAW: [u64; {}] = [", internal_constants.len());
+	for &c in &internal_constants {
+		println!("\t{:#018x},", c.as_canonical_u64());
 	}
-	println!("\t]");
-	println!("}});");
+	println!("];");
 	println!();
 
-	// Print initial external constants as static Lazy<Vec<[Goldilocks; 12]>>
-	println!("/// Pre-computed initial external round constants for Poseidon2 with WIDTH=12");
-	println!("static POSEIDON2_INITIAL_EXTERNAL_CONSTANTS_12: Lazy<Vec<[Goldilocks; 12]>> = Lazy::new(|| {{");
-	println!("\tvec![");
+	// Print initial external constants as raw u64 array
+	println!("/// Raw u64 values for initial external round constants");
+	println!(
+		"const POSEIDON2_INITIAL_EXTERNAL_CONSTANTS_RAW: [[u64; {}]; {}] = [",
+		WIDTH,
+		initial_constants.len()
+	);
 	for round_constants in initial_constants.iter() {
-		println!("\t\t[");
+		println!("\t[");
 		for constant in round_constants.iter() {
-			println!("\t\t\tGoldilocks::from_int(0x{:016x}u64),", constant.as_canonical_u64());
+			println!("\t\t{:#018x},", constant.as_canonical_u64());
 		}
-		println!("\t\t],");
+		println!("\t],");
 	}
-	println!("\t]");
-	println!("}});");
+	println!("];");
 	println!();
 
-	// Print terminal external constants as static Lazy<Vec<[Goldilocks; 12]>>
-	println!("/// Pre-computed terminal external round constants for Poseidon2 with WIDTH=12");
-	println!("static POSEIDON2_TERMINAL_EXTERNAL_CONSTANTS_12: Lazy<Vec<[Goldilocks; 12]>> = Lazy::new(|| {{");
-	println!("\tvec![");
+	// Print terminal external constants as raw u64 array
+	println!("/// Raw u64 values for terminal external round constants");
+	println!(
+		"const POSEIDON2_TERMINAL_EXTERNAL_CONSTANTS_RAW: [[u64; {}]; {}] = [",
+		WIDTH,
+		terminal_constants.len()
+	);
 	for round_constants in terminal_constants.iter() {
-		println!("\t\t[");
+		println!("\t[");
 		for constant in round_constants.iter() {
-			println!("\t\t\tGoldilocks::from_int(0x{:016x}u64),", constant.as_canonical_u64());
+			println!("\t\t{:#018x},", constant.as_canonical_u64());
 		}
-		println!("\t\t],");
+		println!("\t],");
 	}
-	println!("\t]");
-	println!("}});");
+	println!("];");
 	println!();
 
 	// Print helper function to create the optimized Poseidon2
@@ -88,11 +89,39 @@ fn main() {
 	println!("///");
 	println!("/// This is significantly faster than `Poseidon2Core::new()` since it avoids");
 	println!("/// the expensive constant derivation process and runtime conversions.");
-	println!("/// The constants are computed only once and stored in the exact format needed.");
+	println!("/// The constants are computed only once and stored as raw u64 values, then");
+	println!("/// converted to field elements when this function is called.");
 	println!("pub fn create_poseidon() -> Poseidon2Goldilocks<12> {{");
-	println!("\tlet internal_constants = POSEIDON2_INTERNAL_CONSTANTS_12.clone();");
-	println!("\tlet initial_constants = POSEIDON2_INITIAL_EXTERNAL_CONSTANTS_12.clone();");
-	println!("\tlet terminal_constants = POSEIDON2_TERMINAL_EXTERNAL_CONSTANTS_12.clone();");
+	println!("\t// Convert raw u64 arrays to Goldilocks field elements at runtime");
+	println!("\tlet internal_constants: Vec<Goldilocks> = POSEIDON2_INTERNAL_CONSTANTS_RAW");
+	println!("\t\t.iter()");
+	println!("\t\t.map(|&x| Goldilocks::from_int(x))");
+	println!("\t\t.collect();");
+	println!();
+	println!(
+		"\tlet initial_constants: Vec<[Goldilocks; {}]> = POSEIDON2_INITIAL_EXTERNAL_CONSTANTS_RAW",
+		WIDTH
+	);
+	println!("\t\t.iter()");
+	println!("\t\t.map(|round| {{");
+	println!("\t\t\tlet mut round_constants = [Goldilocks::from_int(0); {}];", WIDTH);
+	println!("\t\t\tfor (i, &val) in round.iter().enumerate() {{");
+	println!("\t\t\t\tround_constants[i] = Goldilocks::from_int(val);");
+	println!("\t\t\t}}");
+	println!("\t\t\tround_constants");
+	println!("\t\t}})");
+	println!("\t\t.collect();");
+	println!();
+	println!("\tlet terminal_constants: Vec<[Goldilocks; {}]> = POSEIDON2_TERMINAL_EXTERNAL_CONSTANTS_RAW", WIDTH);
+	println!("\t\t.iter()");
+	println!("\t\t.map(|round| {{");
+	println!("\t\t\tlet mut round_constants = [Goldilocks::from_int(0); {}];", WIDTH);
+	println!("\t\t\tfor (i, &val) in round.iter().enumerate() {{");
+	println!("\t\t\t\tround_constants[i] = Goldilocks::from_int(val);");
+	println!("\t\t\t}}");
+	println!("\t\t\tround_constants");
+	println!("\t\t}})");
+	println!("\t\t.collect();");
 	println!();
 	println!("\tlet external_constants = ExternalLayerConstants::new(initial_constants, terminal_constants);");
 	println!("\tPoseidon2::new(external_constants, internal_constants)");

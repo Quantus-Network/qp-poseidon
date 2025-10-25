@@ -20,7 +20,7 @@ categories = ["cryptography", "no-std"]
 # Common (no_std-friendly; we seed ChaCha from a fixed value)
 rand.workspace = true
 rand_chacha.workspace = true
-once_cell = "1.19"
+
 
 # Plonky3 stack
 p3-goldilocks = { workspace = true, optional = true }
