@@ -89,7 +89,7 @@ fn main() {
 	println!("/// This is significantly faster than `Poseidon2Core::new()` since it avoids");
 	println!("/// the expensive constant derivation process and runtime conversions.");
 	println!("/// The constants are computed only once and stored in the exact format needed.");
-	println!("pub fn create_optimized_poseidon2() -> Poseidon2Goldilocks<12> {{");
+	println!("pub fn create_poseidon() -> Poseidon2Goldilocks<12> {{");
 	println!("\tlet internal_constants = POSEIDON2_INTERNAL_CONSTANTS_12.clone();");
 	println!("\tlet initial_constants = POSEIDON2_INITIAL_EXTERNAL_CONSTANTS_12.clone();");
 	println!("\tlet terminal_constants = POSEIDON2_TERMINAL_EXTERNAL_CONSTANTS_12.clone();");
@@ -113,7 +113,7 @@ fn main() {
 	println!("\tfn test_hardcoded_matches_derived() {{");
 	println!("\t\tlet mut rng = ChaCha20Rng::seed_from_u64(POSEIDON2_SEED);");
 	println!("\t\tlet original = Poseidon2Goldilocks::<12>::new_from_rng_128(&mut rng);");
-	println!("\t\tlet optimized = create_optimized_poseidon2();");
+	println!("\t\tlet optimized = create_poseidon();");
 	println!();
 	println!("\t\t// Test with zero input");
 	println!("\t\tlet mut state1 = [Goldilocks::ZERO; 12];");
@@ -139,7 +139,7 @@ fn main() {
 	println!();
 	println!("\t#[test]");
 	println!("\tfn test_multiple_permutations() {{");
-	println!("\t\tlet optimized = create_optimized_poseidon2();");
+	println!("\t\tlet optimized = create_poseidon();");
 	println!();
 	println!("\t\t// Test multiple permutations to ensure consistency");
 	println!("\t\tlet test_inputs = [");

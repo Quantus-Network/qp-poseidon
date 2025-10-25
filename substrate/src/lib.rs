@@ -17,8 +17,8 @@ use core::{
 use p3_field::integers::QuotientMap;
 use p3_goldilocks::Goldilocks;
 use qp_poseidon_core::{
+	hash_padded_bytes, hash_squeeze_twice, hash_variable_length, hash_variable_length_bytes,
 	serialization::{try_digest_bytes_to_felts, u128_to_felts, u64_to_felts},
-	Poseidon2Core,
 };
 use scale_info::TypeInfo;
 use sp_core::{Hasher, H256};
@@ -67,25 +67,21 @@ impl Hasher for PoseidonHasher {
 impl PoseidonHasher {
 	/// Hash bytes with padding to ensure consistent circuit behavior
 	pub fn hash_padded(x: &[u8]) -> [u8; 32] {
-		let hasher = Poseidon2Core::new();
-		hasher.hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(x)
+		hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(x)
 	}
 
 	/// Hash field elements without any padding
 	pub fn hash_variable_length(x: Vec<Goldilocks>) -> [u8; 32] {
-		let hasher = Poseidon2Core::new();
-		hasher.hash_variable_length(x)
+		hash_variable_length(x)
 	}
 
 	pub fn hash_variable_length_bytes(x: &[u8]) -> [u8; 32] {
-		let hasher = Poseidon2Core::new();
-		hasher.hash_variable_length_bytes(x)
+		hash_variable_length_bytes(x)
 	}
 
 	/// Hash with 512-bit output by hashing input, then hashing the result, and concatenating both
 	pub fn hash_squeeze_twice(x: &[u8]) -> [u8; 64] {
-		let hasher = Poseidon2Core::new();
-		hasher.hash_squeeze_twice(x)
+		hash_squeeze_twice(x)
 	}
 
 	/// Hash storage data for Quantus transfer proofs
@@ -117,32 +113,15 @@ impl PoseidonHasher {
 				.expect("failed to convert digest bytes to felts"),
 		);
 		felts.extend(u128_to_felts::<Goldilocks>(amount));
-		PoseidonHasher::hash_variable_length(felts)
+		hash_variable_length(felts)
 	}
 
 	pub fn double_hash_felts(felts: Vec<Goldilocks>) -> [u8; 32] {
-		let poseidon = Poseidon2Core::new();
-		let inner_hash = poseidon.hash_variable_length(felts);
-		poseidon.hash_variable_length(Self::digest_bytes_to_felts(&inner_hash))
-	}
-
-	/// Convert bytes to field elements for digest operations (8 bytes per element)
-	/// WARNING: this function should not be used when an attacker can control the input bytes.
-	/// An attacker could find second preimage by simply adding Goldilocks::ORDER_U64
-	fn digest_bytes_to_felts(input: &[u8]) -> Vec<Goldilocks> {
-		const BYTES_PER_ELEMENT: usize = 8;
-
-		let mut field_elements: Vec<Goldilocks> = Vec::new();
-		for chunk in input.chunks(BYTES_PER_ELEMENT) {
-			let mut bytes = [0u8; BYTES_PER_ELEMENT];
-			bytes[..chunk.len()].copy_from_slice(chunk);
-			// Convert the chunk to a field element.
-			let value = u64::from_le_bytes(bytes);
-			let field_element = Goldilocks::from_int(value);
-			field_elements.push(field_element);
-		}
-
-		field_elements
+		let inner_hash = hash_variable_length(felts);
+		hash_variable_length(
+			try_digest_bytes_to_felts(&inner_hash)
+				.expect("failed to convert digest bytes to felts"),
+		)
 	}
 }
 
@@ -203,8 +182,7 @@ mod tests {
 	fn test_substrate_wrapper_compatibility() {
 		// Test that the wrapper produces the same results as the core implementation
 		let input = b"test data";
-		let hasher = Poseidon2Core::new();
-		let core_hash = hasher.hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(input);
+		let core_hash = hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(input);
 		let wrapper_hash = PoseidonHasher::hash_padded(input);
 		assert_eq!(core_hash, wrapper_hash);
 	}

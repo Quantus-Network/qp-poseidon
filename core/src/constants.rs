@@ -167,7 +167,7 @@ static POSEIDON2_TERMINAL_EXTERNAL_CONSTANTS_12: Lazy<Vec<[Goldilocks; 12]>> = L
 /// This is significantly faster than `Poseidon2Core::new()` since it avoids
 /// the expensive constant derivation process and runtime conversions.
 /// The constants are computed only once and stored in the exact format needed.
-pub fn create_optimized_poseidon2() -> Poseidon2Goldilocks<12> {
+pub fn create_poseidon() -> Poseidon2Goldilocks<12> {
 	let internal_constants = POSEIDON2_INTERNAL_CONSTANTS_12.clone();
 	let initial_constants = POSEIDON2_INITIAL_EXTERNAL_CONSTANTS_12.clone();
 	let terminal_constants = POSEIDON2_TERMINAL_EXTERNAL_CONSTANTS_12.clone();
@@ -189,7 +189,7 @@ mod tests {
 	fn test_hardcoded_matches_derived() {
 		let mut rng = ChaCha20Rng::seed_from_u64(POSEIDON2_SEED);
 		let original = Poseidon2Goldilocks::<12>::new_from_rng_128(&mut rng);
-		let optimized = create_optimized_poseidon2();
+		let optimized = create_poseidon();
 
 		// Test with zero input
 		let mut state1 = [Goldilocks::ZERO; 12];
@@ -215,7 +215,7 @@ mod tests {
 
 	#[test]
 	fn test_multiple_permutations() {
-		let optimized = create_optimized_poseidon2();
+		let optimized = create_poseidon();
 
 		// Test multiple permutations to ensure consistency
 		let test_inputs = [

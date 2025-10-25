@@ -33,6 +33,7 @@ pub use serialization::p3_backend::GF as P3GF;
 
 // Internal state for Poseidon2 hashing
 struct Poseidon2State {
+	poseidon2: Poseidon2Goldilocks<WIDTH>,
 	state: [Goldilocks; WIDTH],
 	buf: [Goldilocks; RATE],
 	buf_len: usize,
@@ -40,64 +41,75 @@ struct Poseidon2State {
 
 impl Poseidon2State {
 	fn new() -> Self {
-		Self { state: [Goldilocks::ZERO; WIDTH], buf: [Goldilocks::ZERO; RATE], buf_len: 0 }
-	}
-
-	#[inline]
-	fn push_to_buf(&mut self, x: Goldilocks, poseidon2: &Poseidon2Goldilocks<WIDTH>) {
-		self.buf[self.buf_len] = x;
-		self.buf_len += 1;
-		if self.buf_len == RATE {
-			self.absorb_full_block(poseidon2);
+		Self {
+			poseidon2: constants::create_poseidon(),
+			state: [Goldilocks::ZERO; WIDTH],
+			buf: [Goldilocks::ZERO; RATE],
+			buf_len: 0,
 		}
 	}
 
 	#[inline]
-	fn absorb_full_block(&mut self, poseidon2: &Poseidon2Goldilocks<WIDTH>) {
+	fn push_to_buf(&mut self, x: Goldilocks) {
+		self.buf[self.buf_len] = x;
+		self.buf_len += 1;
+		if self.buf_len == RATE {
+			self.absorb_full_block();
+		}
+	}
+
+	#[inline]
+	fn absorb_full_block(&mut self) {
 		// absorb RATE elements into state, then permute
 		for i in 0..RATE {
 			self.state[i] += self.buf[i];
 		}
-		poseidon2.permute_mut(&mut self.state);
+		self.poseidon2.permute_mut(&mut self.state);
 		self.buf = [Goldilocks::ZERO; RATE];
 		self.buf_len = 0;
 	}
 
-	fn append(&mut self, blocks: &[Goldilocks], poseidon2: &Poseidon2Goldilocks<WIDTH>) {
+	fn append(&mut self, blocks: &[Goldilocks]) {
 		for &b in blocks {
-			self.push_to_buf(b, poseidon2);
+			self.push_to_buf(b);
 		}
 	}
 
-	fn append_bytes(&mut self, bytes: &[u8], poseidon2: &Poseidon2Goldilocks<WIDTH>) {
+	fn append_bytes(&mut self, bytes: &[u8]) {
 		let felts = injective_bytes_to_felts(bytes);
-		self.append(&felts, poseidon2);
+		self.append(&felts);
 	}
 
 	/// Finalize with variable-length padding (…||1||0* to RATE) and return the full WIDTH state.
-	fn finalize_state(mut self, poseidon2: &Poseidon2Goldilocks<WIDTH>) -> [Goldilocks; WIDTH] {
+	fn finalize_state(mut self) -> [Goldilocks; WIDTH] {
 		// message-end '1'
-		self.push_to_buf(Goldilocks::ONE, poseidon2);
+		self.push_to_buf(Goldilocks::ONE);
 		// zero-fill remaining of final block
 		while self.buf_len != 0 {
-			self.push_to_buf(Goldilocks::ZERO, poseidon2);
+			self.push_to_buf(Goldilocks::ZERO);
 		}
 		self.state
 	}
 
 	/// Finalize and return a 32-byte digest (first RATE felts).
-	fn finalize(self, poseidon2: &Poseidon2Goldilocks<WIDTH>) -> [u8; 32] {
-		let state = self.finalize_state(poseidon2);
+	fn finalize(self) -> [u8; 32] {
+		let state = self.finalize_state();
 		digest_felts_to_bytes(&state[..RATE].try_into().expect("RATE <= WIDTH"))
 	}
 
 	/// Finalize and squeeze 64 bytes (two squeezes).
-	fn finalize_twice(self, poseidon2: &Poseidon2Goldilocks<WIDTH>) -> [u8; 64] {
-		let mut state = self.finalize_state(poseidon2);
-		let h1 = digest_felts_to_bytes(&state[..RATE].try_into().expect("RATE <= WIDTH"));
+	fn finalize_twice(mut self) -> [u8; 64] {
+		// message-end '1'
+		self.push_to_buf(Goldilocks::ONE);
+		// zero-fill remaining of final block
+		while self.buf_len != 0 {
+			self.push_to_buf(Goldilocks::ZERO);
+		}
+
+		let h1 = digest_felts_to_bytes(&self.state[..RATE].try_into().expect("RATE <= WIDTH"));
 		// second squeeze
-		poseidon2.permute_mut(&mut state);
-		let h2 = digest_felts_to_bytes(&state[..RATE].try_into().expect("RATE <= WIDTH"));
+		self.poseidon2.permute_mut(&mut self.state);
+		let h2 = digest_felts_to_bytes(&self.state[..RATE].try_into().expect("RATE <= WIDTH"));
 
 		let mut out = [0u8; 64];
 		out[..32].copy_from_slice(&h1);
@@ -106,86 +118,59 @@ impl Poseidon2State {
 	}
 }
 
-/// Core Poseidon2 hasher implementation that holds an initialized instance
-#[derive(Clone)]
-pub struct Poseidon2Core {
-	poseidon2: Poseidon2Goldilocks<WIDTH>,
-}
-
-impl Default for Poseidon2Core {
-	fn default() -> Self {
-		Self::new()
+pub fn poseidon2_from_seed(seed: u64) -> Poseidon2State {
+	let mut rng = ChaCha20Rng::seed_from_u64(seed);
+	let poseidon2 = Poseidon2Goldilocks::<WIDTH>::new_from_rng_128(&mut rng);
+	Poseidon2State {
+		poseidon2,
+		state: [Goldilocks::ZERO; WIDTH],
+		buf: [Goldilocks::ZERO; RATE],
+		buf_len: 0,
 	}
 }
 
-impl Poseidon2Core {
-	/// Create a new Poseidon2Core instance deriving constants
-	pub fn new_unoptimized() -> Self {
-		let mut rng = ChaCha20Rng::seed_from_u64(POSEIDON2_SEED);
-		let poseidon2 = Poseidon2Goldilocks::<WIDTH>::new_from_rng_128(&mut rng);
-		Self { poseidon2 }
+fn hash_circuit_padding_felts<const C: usize>(mut x: Vec<Goldilocks>) -> [u8; 32] {
+	// This function doesn't protect against length extension attacks but is safe as
+	// long as the input felts are the outputs of an injective encoding.
+	// For this reason, we wrap it in hash_padded which performs injective encoding from bytes,
+	// so application users are safe.
+	let len = x.len();
+	if len > C {
+		panic!("Input too large: {} elements exceeds capacity {}", len, C);
+	}
+	if len < C {
+		x.resize(C, Goldilocks::ZERO);
 	}
 
-	/// Create an optimized Poseidon2Core instance using precomputed constants
-	///
-	/// This is significantly faster than `new_unoptimized()` since it avoids the expensive
-	/// constant derivation process on each instantiation.
-	#[cfg(feature = "p3")]
-	pub fn new() -> Self {
-		let poseidon2 = constants::create_optimized_poseidon2();
-		Self { poseidon2 }
-	}
+	hash_variable_length(x)
+}
 
-	/// Create a new Poseidon2Core instance with a custom seed
-	pub fn with_seed(seed: u64) -> Self {
-		let mut rng = ChaCha20Rng::seed_from_u64(seed);
-		let poseidon2 = Poseidon2Goldilocks::<WIDTH>::new_from_rng_128(&mut rng);
-		Self { poseidon2 }
-	}
+/// Hash bytes with constant padding to size C to ensure consistent circuit behavior
+/// NOTE: Will panic if felt encoded input exceeds capacity of C
+pub fn hash_padded_bytes<const C: usize>(x: &[u8]) -> [u8; 32] {
+	hash_circuit_padding_felts::<C>(injective_bytes_to_felts(x))
+}
 
-	fn hash_circuit_padding_felts<const C: usize>(&self, mut x: Vec<Goldilocks>) -> [u8; 32] {
-		// This function doesn't protect against length extension attacks but is safe as
-		// long as the input felts are the outputs of an injective encoding.
-		// For this reason, we wrap it in hash_padded which performs injective encoding from bytes,
-		// so application users are safe.
-		let len = x.len();
-		if len > C {
-			panic!("Input too large: {} elements exceeds capacity {}", len, C);
-		}
-		if len < C {
-			x.resize(C, Goldilocks::ZERO);
-		}
+/// Hash field elements without any padding
+pub fn hash_variable_length(x: Vec<Goldilocks>) -> [u8; 32] {
+	let mut st = Poseidon2State::new();
+	st.append(&x);
+	st.finalize()
+}
 
-		self.hash_variable_length(x)
-	}
+/// Hash bytes without any padding
+/// NOTE: Not domain-separated from hash_variable_length; use with caution
+pub fn hash_variable_length_bytes(x: &[u8]) -> [u8; 32] {
+	let mut st = Poseidon2State::new();
+	st.append_bytes(x);
+	st.finalize()
+}
 
-	/// Hash bytes with constant padding to size C to ensure consistent circuit behavior
-	/// NOTE: Will panic if felt encoded input exceeds capacity of C
-	pub fn hash_padded_bytes<const C: usize>(&self, x: &[u8]) -> [u8; 32] {
-		self.hash_circuit_padding_felts::<C>(injective_bytes_to_felts(x))
-	}
-
-	/// Hash field elements without any padding
-	pub fn hash_variable_length(&self, x: Vec<Goldilocks>) -> [u8; 32] {
-		let mut st = Poseidon2State::new();
-		st.append(&x, &self.poseidon2);
-		st.finalize(&self.poseidon2)
-	}
-
-	/// Hash bytes without any padding
-	/// NOTE: Not domain-separated from hash_variable_length; use with caution
-	pub fn hash_variable_length_bytes(&self, x: &[u8]) -> [u8; 32] {
-		let mut st = Poseidon2State::new();
-		st.append_bytes(x, &self.poseidon2);
-		st.finalize(&self.poseidon2)
-	}
-
-	/// Hash with 512-bit output by squeezing the sponge twice
-	pub fn hash_squeeze_twice(&self, x: &[u8]) -> [u8; 64] {
-		let mut st = Poseidon2State::new();
-		st.append_bytes(x, &self.poseidon2);
-		st.finalize_twice(&self.poseidon2)
-	}
+/// Hash with 512-bit output by squeezing the sponge twice
+pub fn hash_squeeze_twice(x: &[u8]) -> [u8; 64] {
+	let mut st = Poseidon2State::new();
+	st.append_bytes(x);
+	st.finalize_twice()
 }
 
 #[cfg(test)]
@@ -199,75 +184,67 @@ mod tests {
 
 	#[test]
 	fn test_empty_input() {
-		let hasher = Poseidon2Core::new();
-		let result = hasher.hash_padded_bytes::<C>(&[]);
+		let result = hash_padded_bytes::<C>(&[]);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_single_byte() {
-		let hasher = Poseidon2Core::new();
 		let input = vec![42u8];
-		let result = hasher.hash_padded_bytes::<C>(&input);
+		let result = hash_padded_bytes::<C>(&input);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_exactly_32_bytes() {
-		let hasher = Poseidon2Core::new();
 		let input = [1u8; 32];
-		let result = hasher.hash_padded_bytes::<C>(&input);
+		let result = hash_padded_bytes::<C>(&input);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_multiple_chunks() {
-		let hasher = Poseidon2Core::new();
 		let input = [2u8; 64]; // Two chunks
-		let result = hasher.hash_padded_bytes::<C>(&input);
+		let result = hash_padded_bytes::<C>(&input);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_partial_chunk() {
-		let hasher = Poseidon2Core::new();
 		let input = [3u8; 40]; // One full chunk plus 8 bytes
-		let result = hasher.hash_padded_bytes::<C>(&input);
+		let result = hash_padded_bytes::<C>(&input);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_consistency() {
-		let hasher = Poseidon2Core::new();
 		let input = [4u8; 50];
 		let iterations = 10;
-		let current_hash = hasher.hash_padded_bytes::<C>(&input);
+		let current_hash = hash_padded_bytes::<C>(&input);
 
 		for _ in 0..iterations {
-			let hash1 = hasher.hash_padded_bytes::<C>(&current_hash);
-			let hash2 = hasher.hash_padded_bytes::<C>(&current_hash);
+			let hash1 = hash_padded_bytes::<C>(&current_hash);
+			let hash2 = hash_padded_bytes::<C>(&current_hash);
 			assert_eq!(hash1, hash2, "Hash function should be deterministic");
 		}
 	}
 
 	#[test]
 	fn test_different_inputs() {
-		let hasher = Poseidon2Core::new();
 		let input1 = [5u8; 32];
 		let input2 = [6u8; 32];
-		let hash1 = hasher.hash_padded_bytes::<C>(&input1);
-		let hash2 = hasher.hash_padded_bytes::<C>(&input2);
+		let hash1 = hash_padded_bytes::<C>(&input1);
+		let hash2 = hash_padded_bytes::<C>(&input2);
 		assert_ne!(hash1, hash2, "Different inputs should produce different hashes");
 	}
 
 	#[test]
 	fn test_poseidon2_hash_input_sizes() {
-		let hasher = Poseidon2Core::new();
 		// Test inputs from 1 to 128 bytes
 		for size in 1..=128 {
 			// Create a predictable input: repeating byte value based on size
 			let input: Vec<u8> = (0..size).map(|i| (i * i % 256) as u8).collect();
-			let hash = hasher.hash_padded_bytes::<C>(&input);
+			let hash = hash_padded_bytes::<C>(&input);
 
 			// Assertions
 			assert_eq!(hash.len(), 32, "Input size {} should produce 32-byte hash", size);
@@ -276,21 +253,19 @@ mod tests {
 
 	#[test]
 	fn test_big_preimage() {
-		let hasher = Poseidon2Core::new();
 		for overflow in 1..=10 {
 			let preimage =
 				(<p3_goldilocks::Goldilocks as PrimeField64>::ORDER_U64 + overflow).to_le_bytes();
-			let _hash = hasher.hash_padded_bytes::<C>(&preimage);
+			let _hash = hash_padded_bytes::<C>(&preimage);
 		}
 	}
 
 	#[test]
 	fn test_circuit_preimage() {
-		let hasher = Poseidon2Core::new();
 		let preimage =
 			hex::decode("afd8e7530b95ee5ebab950c9a0c62fae1e80463687b3982233028e914f8ec7cc");
-		let hash = hasher.hash_padded_bytes::<C>(&preimage.unwrap());
-		let _hash = hasher.hash_padded_bytes::<C>(&hash);
+		let hash = hash_padded_bytes::<C>(&preimage.unwrap());
+		let _hash = hash_padded_bytes::<C>(&hash);
 	}
 
 	#[test]
@@ -307,11 +282,10 @@ mod tests {
 			"e5d30b9a4c2a6f81e5d30b9a4c2a6f81e5d30b9a4c2a6f81e5d30b9a4c2a6f81",
 		];
 
-		let hasher = Poseidon2Core::new();
 		for hex_string in hex_strings.iter() {
 			let preimage = hex::decode(hex_string).unwrap();
-			let hash = hasher.hash_padded_bytes::<C>(&preimage);
-			let _hash2 = hasher.hash_padded_bytes::<C>(&hash);
+			let hash = hash_padded_bytes::<C>(&preimage);
+			let _hash2 = hash_padded_bytes::<C>(&hash);
 		}
 	}
 
@@ -404,9 +378,8 @@ mod tests {
 				"2e3e4a00be0d8520cddaf3000d98c1f1d73c19bfe9fe181694bfa9afdfce7687",
 			),
 		];
-		let poseidon = Poseidon2Core::new();
 		for (input, expected_hex1, expected_hex2) in vectors.iter() {
-			let hash = poseidon.hash_padded_bytes::<C>(input);
+			let hash = hash_padded_bytes::<C>(input);
 			assert_eq!(
 				hex::encode(hash.as_slice()),
 				*expected_hex1,
@@ -414,7 +387,7 @@ mod tests {
 				hex::encode(input)
 			);
 
-			let hash2 = poseidon.hash_variable_length_bytes(input);
+			let hash2 = hash_variable_length_bytes(input);
 			assert_eq!(
 				hex::encode(hash2.as_slice()),
 				*expected_hex2,
@@ -426,10 +399,9 @@ mod tests {
 
 	#[test]
 	fn test_hash_variable_length() {
-		let hasher = Poseidon2Core::new();
 		let input = b"test";
-		let padded_hash = hasher.hash_padded_bytes::<C>(input);
-		let no_pad_hash = hasher.hash_variable_length_bytes(input);
+		let padded_hash = hash_padded_bytes::<C>(input);
+		let no_pad_hash = hash_variable_length_bytes(input);
 
 		// These should be different since one is padded and the other isn't
 		assert_ne!(padded_hash, no_pad_hash);
@@ -438,38 +410,23 @@ mod tests {
 	}
 
 	#[test]
-	fn test_deterministic_constants() {
-		// Test that using the same seed produces the same results
-		let hasher1 = Poseidon2Core::new_unoptimized();
-		let input = b"test deterministic";
-		let hash1 = hasher1.hash_padded_bytes::<C>(input);
-
-		for _ in 0..100 {
-			let hasher2 = Poseidon2Core::new();
-			let hash2 = hasher2.hash_padded_bytes::<C>(input);
-			assert_eq!(hash1, hash2, "Deterministic seed should produce consistent results");
-		}
-	}
-
-	#[test]
 	fn test_hash_squeeze_twice() {
-		let hasher = Poseidon2Core::new();
 		let input = b"test 512-bit hash";
-		let hash512 = hasher.hash_squeeze_twice(input);
+		let hash512 = hash_squeeze_twice(input);
 
 		// Should be exactly 64 bytes
 		assert_eq!(hash512.len(), 64);
 
 		// First 32 bytes should be hash of input
-		let expected_first = hasher.hash_variable_length_bytes(input);
+		let expected_first = hash_variable_length_bytes(input);
 		assert_eq!(&hash512[0..32], &expected_first);
 
 		// Test deterministic
-		let hash512_2 = hasher.hash_squeeze_twice(input);
+		let hash512_2 = hash_squeeze_twice(input);
 		assert_eq!(hash512, hash512_2);
 
 		// Different inputs should produce different outputs
-		let different_hash = hasher.hash_squeeze_twice(b"different input");
+		let different_hash = hash_squeeze_twice(b"different input");
 		assert_ne!(hash512, different_hash);
 	}
 }
