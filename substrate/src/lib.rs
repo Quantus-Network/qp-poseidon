@@ -103,21 +103,15 @@ impl PoseidonHasher {
 		let (transfer_count, from_account, to_account, amount): (u64, AccountId, AccountId, u128) =
 			Decode::decode(&mut y).expect("already asserted input length. qed");
 		felts.extend(u64_to_felts::<Goldilocks>(transfer_count));
-		felts.extend(
-			noninjective_digest_bytes_to_felts::<Goldilocks>(&from_account.encode())
-		);
-		felts.extend(
-			noninjective_digest_bytes_to_felts::<Goldilocks>(&to_account.encode()),
-		);
+		felts.extend(noninjective_digest_bytes_to_felts::<Goldilocks>(&from_account.encode()));
+		felts.extend(noninjective_digest_bytes_to_felts::<Goldilocks>(&to_account.encode()));
 		felts.extend(u128_to_felts::<Goldilocks>(amount));
 		hash_variable_length(felts)
 	}
 
 	pub fn double_hash_felts(felts: Vec<Goldilocks>) -> [u8; 32] {
 		let inner_hash = hash_variable_length(felts);
-		hash_variable_length(
-			noninjective_digest_bytes_to_felts(&inner_hash),
-		)
+		hash_variable_length(noninjective_digest_bytes_to_felts(&inner_hash))
 	}
 }
 

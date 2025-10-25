@@ -104,9 +104,7 @@ pub fn injective_bytes_to_felts<G: GoldiCompat>(input: &[u8]) -> Vec<G> {
 }
 
 /// 8 bytes → 1 felt, for digest paths, with bounds check.
-pub fn noninjective_digest_bytes_to_felts<G: GoldiCompat>(
-	input: &[u8],
-) -> Vec<G> {
+pub fn noninjective_digest_bytes_to_felts<G: GoldiCompat>(input: &[u8]) -> Vec<G> {
 	const BYTES_PER_ELEMENT: usize = 8;
 	let mut out = Vec::new();
 

@@ -1,7 +1,10 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use p3_field::integers::QuotientMap;
 use p3_goldilocks::Goldilocks;
-use qp_poseidon_core::{poseidon2_from_seed, serialization::injective_bytes_to_felts, hash_padded_bytes, hash_variable_length_bytes, hash_squeeze_twice, hash_variable_length};
+use qp_poseidon_core::{
+	hash_padded_bytes, hash_squeeze_twice, hash_variable_length, hash_variable_length_bytes,
+	poseidon2_from_seed, serialization::injective_bytes_to_felts,
+};
 
 /// Generate test data of varying sizes for benchmarking
 fn generate_test_data(size: usize) -> Vec<u8> {
