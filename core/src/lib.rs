@@ -132,9 +132,6 @@ fn hash_circuit_padding_felts<const C: usize>(mut x: Vec<Goldilocks>) -> [u8; 32
 	// For this reason, we wrap it in hash_padded which performs injective encoding from bytes,
 	// so application users are safe.
 	let len = x.len();
-	if len > C {
-		panic!("Input too large: {} elements exceeds capacity {}", len, C);
-	}
 	if len < C {
 		x.resize(C, Goldilocks::ZERO);
 	}
