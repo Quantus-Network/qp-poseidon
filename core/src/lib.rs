@@ -21,6 +21,7 @@ pub const FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 189;
 // => 256 bits of classical preimage security => 128 bits security against Grover's algorithm
 const WIDTH: usize = 12;
 const RATE: usize = 4;
+const OUTPUT: usize = 4;
 
 // Bring the selected Goldilocks type in as `GF`
 #[cfg(feature = "p2")]
@@ -91,7 +92,7 @@ impl Poseidon2State {
 	/// Finalize and return a 32-byte digest (first RATE felts).
 	fn finalize(self) -> [u8; 32] {
 		let state = self.finalize_state();
-		digest_felts_to_bytes(&state[..RATE].try_into().expect("RATE <= WIDTH"))
+		digest_felts_to_bytes(&state[..OUTPUT].try_into().expect("OUTPUT <= WIDTH"))
 	}
 
 	/// Finalize and squeeze 64 bytes (two squeezes).
@@ -103,15 +104,14 @@ impl Poseidon2State {
 			self.push_to_buf(Goldilocks::ZERO);
 		}
 
-		let h1 = digest_felts_to_bytes(&self.state[..RATE].try_into().expect("RATE <= WIDTH"));
+		let h1: [u8; 32] =
+			digest_felts_to_bytes(&self.state[..RATE].try_into().expect("RATE <= WIDTH"));
 		// second squeeze
 		self.poseidon2.permute_mut(&mut self.state);
-		let h2 = digest_felts_to_bytes(&self.state[..RATE].try_into().expect("RATE <= WIDTH"));
+		let h2: [u8; 32] =
+			digest_felts_to_bytes(&self.state[..RATE].try_into().expect("RATE <= WIDTH"));
 
-		let mut out = [0u8; 64];
-		out[..32].copy_from_slice(&h1);
-		out[32..].copy_from_slice(&h2);
-		out
+		[h1, h2].concat().try_into().expect("64 bytes")
 	}
 }
 
@@ -154,6 +154,18 @@ pub fn hash_variable_length(x: Vec<Goldilocks>) -> [u8; 32] {
 	st.append(&x);
 	st.finalize()
 }
+/// Double hash (preimage -> hash -> hash) field elements without any padding
+pub fn double_hash_variable_length(x: Vec<Goldilocks>) -> [u8; 32] {
+	let mut st = Poseidon2State::new();
+	st.append(&x);
+	// Extract first digest
+	let state_0 = st.finalize_state();
+	let output_0 = &state_0[..OUTPUT];
+	// Hash the digest again
+	st = Poseidon2State::new();
+	st.append(output_0);
+	st.finalize()
+}
 
 /// Hash bytes without any padding
 /// NOTE: Not domain-separated from hash_variable_length; use with caution
@@ -172,6 +184,8 @@ pub fn hash_squeeze_twice(x: &[u8]) -> [u8; 64] {
 
 #[cfg(test)]
 mod tests {
+	use crate::serialization::digest_bytes_to_felts;
+
 	use super::*;
 	use alloc::vec;
 	use hex;
@@ -425,5 +439,20 @@ mod tests {
 		// Different inputs should produce different outputs
 		let different_hash = hash_squeeze_twice(b"different input");
 		assert_ne!(hash512, different_hash);
+	}
+
+	#[test]
+	fn test_double_hash_variable_length() {
+		let preimage = b"double hash test";
+		let first_hash = hash_variable_length_bytes(preimage);
+		let double_hash = double_hash_variable_length(injective_bytes_to_felts(preimage));
+
+		// Double hash should not equal single hash
+		assert_ne!(first_hash, double_hash);
+
+		// Double hash should equal hashing the first hash with the hash_variable_length function
+		let recomputed_double_hash =
+			hash_variable_length(digest_bytes_to_felts(&first_hash).to_vec());
+		assert_eq!(double_hash, recomputed_double_hash);
 	}
 }

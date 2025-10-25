@@ -1,7 +1,9 @@
-use crate::RATE;
+use crate::OUTPUT;
 use alloc::vec::Vec;
 
 const BIT_32_LIMB_MASK: u64 = 0xFFFF_FFFF;
+
+pub type BytesDigest = [u8; 32];
 
 /// Unify just what we need from a Goldilocks field element.
 pub trait GoldiCompat: Copy + Clone + core::ops::AddAssign + 'static {
@@ -60,6 +62,8 @@ pub mod p2_backend {
 	pub type GF = P2G;
 }
 
+pub const DIGEST_BYTES_PER_ELEMENT: usize = 8;
+
 pub fn u128_to_felts<G: GoldiCompat>(num: u128) -> Vec<G> {
 	const FELTS_PER_U128: usize = 4;
 	(0..FELTS_PER_U128)
@@ -103,23 +107,23 @@ pub fn injective_bytes_to_felts<G: GoldiCompat>(input: &[u8]) -> Vec<G> {
 	out
 }
 
-/// 8 bytes → 1 felt, for digest paths, with bounds check.
-pub fn noninjective_digest_bytes_to_felts<G: GoldiCompat>(input: &[u8]) -> Vec<G> {
+/// 8 bytes → 1 felt, for digest paths ONLY. Assumes bytes fit within field order.
+pub fn digest_bytes_to_felts<G: GoldiCompat>(input: &BytesDigest) -> [G; OUTPUT] {
 	const BYTES_PER_ELEMENT: usize = 8;
-	let mut out = Vec::new();
+	let mut out = [G::from_u64(0); OUTPUT];
 
-	for chunk in input.chunks(BYTES_PER_ELEMENT) {
+	for (chunk, out_elem) in input.chunks(BYTES_PER_ELEMENT).zip(out.iter_mut()) {
 		let mut bytes = [0u8; BYTES_PER_ELEMENT];
 		bytes[..chunk.len()].copy_from_slice(chunk);
-		out.push(G::from_u64(u64::from_le_bytes(bytes)));
+		*out_elem = G::from_u64(u64::from_le_bytes(bytes));
 	}
 	out
 }
 
-pub fn digest_felts_to_bytes<G: GoldiCompat>(input: &[G; RATE]) -> [u8; 32] {
-	// Convert exactly RATE felts to 32 bytes: RATE felts × 8 bytes/felt = 32 bytes
+pub fn digest_felts_to_bytes<G: GoldiCompat>(input: &[G; OUTPUT]) -> BytesDigest {
+	// Convert exactly OUTPUT felts to 32 bytes: OUTPUT felts × 8 bytes/felt = 32 bytes
 	let mut bytes = [0u8; 32];
-	for (i, v) in input.iter().enumerate().take(RATE) {
+	for (i, v) in input.iter().enumerate().take(OUTPUT) {
 		let start = i * 8;
 		let end = start + 8;
 		bytes[start..end].copy_from_slice(&G::to_u64(*v).to_le_bytes());
@@ -184,7 +188,7 @@ mod tests {
 	use super::*;
 	use crate::Goldilocks;
 	use alloc::{format, string::String, vec};
-	use p3_field::{integers::QuotientMap, PrimeCharacteristicRing, PrimeField64};
+	use p3_field::{integers::QuotientMap, PrimeField64};
 
 	#[test]
 	fn test_utility_functions() {
@@ -336,62 +340,13 @@ mod tests {
 		}];
 
 		for original in test_cases {
-			let felts = noninjective_digest_bytes_to_felts::<Goldilocks>(&original);
+			let felts = digest_bytes_to_felts::<Goldilocks>(&original);
 			let reconstructed = digest_felts_to_bytes(&[felts[0], felts[1], felts[2], felts[3]]);
 			assert_eq!(
 				original, reconstructed,
 				"Digest bytes round-trip failed.\nOriginal: {:?}\nReconstructed: {:?}",
 				original, reconstructed
 			);
-		}
-	}
-
-	#[test]
-	fn test_digest_bytes_partial_round_trip() {
-		// Test with smaller inputs that are valid
-		let test_cases = vec![
-			vec![],
-			vec![42u8],
-			vec![1u8, 2u8, 3u8, 4u8],
-			vec![100u8; 8], // one felt worth, reasonable values
-			vec![50u8; 16], // two felts worth
-			vec![25u8; 24], // three felts worth
-		];
-
-		for original in test_cases {
-			let felts = noninjective_digest_bytes_to_felts::<Goldilocks>(&original);
-
-			// Pad felts to 4 elements for digest (fill with zeros if needed)
-			let mut padded_felts = vec![Goldilocks::ZERO; 4];
-			for (i, &felt) in felts.iter().enumerate().take(4) {
-				padded_felts[i] = felt;
-			}
-
-			let reconstructed = digest_felts_to_bytes(&[
-				padded_felts[0],
-				padded_felts[1],
-				padded_felts[2],
-				padded_felts[3],
-			]);
-
-			// For partial inputs, the reconstructed should be padded to 32 bytes
-			assert_eq!(reconstructed.len(), 32, "Digest output should always be 32 bytes");
-
-			// The original bytes should match the beginning of the reconstructed bytes
-			if !original.is_empty() {
-				assert_eq!(
-					&reconstructed[..original.len()],
-					&original[..],
-					"Digest partial round-trip failed.\nOriginal: {:?}\nReconstructed prefix: {:?}",
-					original,
-					&reconstructed[..original.len()]
-				);
-			}
-
-			// The padding should be zeros
-			for &byte in &reconstructed[original.len()..] {
-				assert_eq!(byte, 0, "Padding bytes should be zero");
-			}
 		}
 	}
 
