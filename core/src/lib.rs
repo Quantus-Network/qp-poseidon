@@ -17,9 +17,6 @@ use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 /// The number of field elements to which inputs are padded in circuit-compatible hashing functions.
 pub const FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 189;
 
-/// Use the first 8 bytes of the pi written out 3.141592653589793
-const POSEIDON2_SEED: u64 = 0x3141592653589793;
-
 // 4 felt output => 4 felt rate per round => capacity = 12 - 4 = 8
 // => 256 bits of classical preimage security => 128 bits security against Grover's algorithm
 const WIDTH: usize = 12;

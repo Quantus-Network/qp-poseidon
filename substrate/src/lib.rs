@@ -14,11 +14,10 @@ use core::{
 	iter::Extend,
 	prelude::rust_2024::derive,
 };
-use p3_field::integers::QuotientMap;
 use p3_goldilocks::Goldilocks;
 use qp_poseidon_core::{
 	hash_padded_bytes, hash_squeeze_twice, hash_variable_length, hash_variable_length_bytes,
-	serialization::{try_digest_bytes_to_felts, u128_to_felts, u64_to_felts},
+	serialization::{noninjective_digest_bytes_to_felts, u128_to_felts, u64_to_felts},
 };
 use scale_info::TypeInfo;
 use sp_core::{Hasher, H256};
@@ -105,12 +104,10 @@ impl PoseidonHasher {
 			Decode::decode(&mut y).expect("already asserted input length. qed");
 		felts.extend(u64_to_felts::<Goldilocks>(transfer_count));
 		felts.extend(
-			try_digest_bytes_to_felts::<Goldilocks>(&from_account.encode())
-				.expect("failed to convert digest bytes to felts"),
+			noninjective_digest_bytes_to_felts::<Goldilocks>(&from_account.encode())
 		);
 		felts.extend(
-			try_digest_bytes_to_felts::<Goldilocks>(&to_account.encode())
-				.expect("failed to convert digest bytes to felts"),
+			noninjective_digest_bytes_to_felts::<Goldilocks>(&to_account.encode()),
 		);
 		felts.extend(u128_to_felts::<Goldilocks>(amount));
 		hash_variable_length(felts)
@@ -119,8 +116,7 @@ impl PoseidonHasher {
 	pub fn double_hash_felts(felts: Vec<Goldilocks>) -> [u8; 32] {
 		let inner_hash = hash_variable_length(felts);
 		hash_variable_length(
-			try_digest_bytes_to_felts(&inner_hash)
-				.expect("failed to convert digest bytes to felts"),
+			noninjective_digest_bytes_to_felts(&inner_hash),
 		)
 	}
 }

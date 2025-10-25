@@ -104,26 +104,18 @@ pub fn injective_bytes_to_felts<G: GoldiCompat>(input: &[u8]) -> Vec<G> {
 }
 
 /// 8 bytes → 1 felt, for digest paths, with bounds check.
-pub fn try_digest_bytes_to_felts<G: GoldiCompat>(
+pub fn noninjective_digest_bytes_to_felts<G: GoldiCompat>(
 	input: &[u8],
-) -> Result<Vec<G>, alloc::string::String> {
+) -> Vec<G> {
 	const BYTES_PER_ELEMENT: usize = 8;
 	let mut out = Vec::new();
 
-	for (i, chunk) in input.chunks(BYTES_PER_ELEMENT).enumerate() {
+	for chunk in input.chunks(BYTES_PER_ELEMENT) {
 		let mut bytes = [0u8; BYTES_PER_ELEMENT];
 		bytes[..chunk.len()].copy_from_slice(chunk);
-		let v = u64::from_le_bytes(bytes);
-		if v >= G::ORDER_U64 {
-			return Err(alloc::format!(
-				"Byte chunk value exceeds field order at chunk {} (bytes: {:?})",
-				i,
-				chunk
-			));
-		}
-		out.push(G::from_u64(v));
+		out.push(G::from_u64(u64::from_le_bytes(bytes)));
 	}
-	Ok(out)
+	out
 }
 
 pub fn digest_felts_to_bytes<G: GoldiCompat>(input: &[G; RATE]) -> [u8; 32] {
@@ -346,8 +338,7 @@ mod tests {
 		}];
 
 		for original in test_cases {
-			let felts = try_digest_bytes_to_felts::<Goldilocks>(&original)
-				.expect(&format!("Failed to convert bytes to felts: {:?}", original));
+			let felts = noninjective_digest_bytes_to_felts::<Goldilocks>(&original);
 			let reconstructed = digest_felts_to_bytes(&[felts[0], felts[1], felts[2], felts[3]]);
 			assert_eq!(
 				original, reconstructed,
@@ -370,8 +361,7 @@ mod tests {
 		];
 
 		for original in test_cases {
-			let felts = try_digest_bytes_to_felts::<Goldilocks>(&original)
-				.expect(&format!("Failed to convert bytes to felts: {:?}", original));
+			let felts = noninjective_digest_bytes_to_felts::<Goldilocks>(&original);
 
 			// Pad felts to 4 elements for digest (fill with zeros if needed)
 			let mut padded_felts = vec![Goldilocks::ZERO; 4];
@@ -405,28 +395,6 @@ mod tests {
 				assert_eq!(byte, 0, "Padding bytes should be zero");
 			}
 		}
-	}
-
-	#[test]
-	fn test_digest_bytes_field_order_validation() {
-		// Test that values >= field order are rejected
-		let order = <Goldilocks as PrimeField64>::ORDER_U64;
-
-		// First test that order - 1 is accepted
-		let under_order_bytes = (order - 1).to_le_bytes();
-		let _felts = try_digest_bytes_to_felts::<Goldilocks>(&under_order_bytes)
-			.expect("Value < field order should be accepted");
-
-		// Now test that values >= field order are rejected
-		let order_bytes = order.to_le_bytes();
-		let result = try_digest_bytes_to_felts::<Goldilocks>(&order_bytes);
-		assert!(result.is_err(), "Field order value should be rejected");
-
-		// Create a byte array that represents field order + 1
-		let mut over_order_bytes = [0u8; 16];
-		over_order_bytes[..8].copy_from_slice(&(order + 1).to_le_bytes());
-		let result = try_digest_bytes_to_felts::<Goldilocks>(&over_order_bytes);
-		assert!(result.is_err(), "Value > field order should be rejected");
 	}
 
 	#[test]
