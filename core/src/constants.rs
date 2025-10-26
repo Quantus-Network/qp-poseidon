@@ -10,7 +10,7 @@ use p3_goldilocks::{Goldilocks, Poseidon2Goldilocks};
 use p3_poseidon2::{ExternalLayerConstants, Poseidon2};
 
 /// Raw u64 values for internal round constants
-const POSEIDON2_INTERNAL_CONSTANTS_RAW: [u64; 22] = [
+pub const POSEIDON2_INTERNAL_CONSTANTS_RAW: [u64; 22] = [
 	0x97f7798a784ad863,
 	0xd1d2bf082f60d4f0,
 	0x69a377a79f9ad206,
@@ -36,7 +36,7 @@ const POSEIDON2_INTERNAL_CONSTANTS_RAW: [u64; 22] = [
 ];
 
 /// Raw u64 values for initial external round constants
-const POSEIDON2_INITIAL_EXTERNAL_CONSTANTS_RAW: [[u64; 12]; 4] = [
+pub const POSEIDON2_INITIAL_EXTERNAL_CONSTANTS_RAW: [[u64; 12]; 4] = [
 	[
 		0xc002e770975b1607,
 		0xbca51a8dfe14593a,
@@ -96,7 +96,7 @@ const POSEIDON2_INITIAL_EXTERNAL_CONSTANTS_RAW: [[u64; 12]; 4] = [
 ];
 
 /// Raw u64 values for terminal external round constants
-const POSEIDON2_TERMINAL_EXTERNAL_CONSTANTS_RAW: [[u64; 12]; 4] = [
+pub const POSEIDON2_TERMINAL_EXTERNAL_CONSTANTS_RAW: [[u64; 12]; 4] = [
 	[
 		0x7b72c539e0ea4c6e,
 		0x144573dae2ce9976,
