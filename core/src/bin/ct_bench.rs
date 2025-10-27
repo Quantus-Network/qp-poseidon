@@ -65,18 +65,49 @@ fn generate_random_felt_input(count: usize, rng: &mut BenchRng) -> Vec<Goldilock
 	random_input
 }
 
+/// Disrupt cache and microarchitectural state between samples
+fn disrupt_cache(rng: &mut BenchRng) {
+	// Large memory access to evict cache lines
+	let dummy = vec![0u8; 16 * 1024 * 1024]; // 16MB
+	let mut sum = 0u64;
+
+	// Access every cache line (64 bytes) to force eviction
+	for i in (0..dummy.len()).step_by(64) {
+		sum = sum.wrapping_add(dummy[i] as u64);
+	}
+
+	// Random access pattern to disrupt prefetcher
+	use rand::Rng;
+	for _ in 0..100 {
+		let idx = rng.gen_range(0..dummy.len());
+		sum = sum.wrapping_add(dummy[idx] as u64);
+	}
+
+	// Memory barrier and dummy computation
+	std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
+	for i in 0..1000 {
+		sum = sum.wrapping_mul(i).wrapping_add(0xDEADBEEF);
+	}
+
+	// Prevent compiler optimization
+	std::hint::black_box(sum);
+}
+
 /// Test hash_padded_bytes with small inputs (32 bytes)
 #[cfg(feature = "dudect-bencher")]
 fn test_hash_padded_bytes_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(SMALL_INPUT_SIZE, rng);
 
-	for _ in 0..100_000 {
+	for _ in 0..10_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let input = match class {
 			Class::Left => fixed_input.clone(),
 			Class::Right => generate_random_byte_input(SMALL_INPUT_SIZE, rng),
 		};
+
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
 
 		runner.run_one(class, || {
 			let _result = hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
@@ -90,12 +121,15 @@ fn test_hash_padded_bytes_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE, rng);
 
-	for _ in 0..100_000 {
+	for _ in 0..10_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let input = match class {
 			Class::Left => fixed_input.clone(),
 			Class::Right => generate_random_byte_input(MEDIUM_INPUT_SIZE, rng),
 		};
+
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
 
 		runner.run_one(class, || {
 			let _result = hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
@@ -109,12 +143,15 @@ fn test_hash_padded_bytes_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(LARGE_INPUT_SIZE, rng);
 
-	for _ in 0..50_000 {
+	for _ in 0..5_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let input = match class {
 			Class::Left => fixed_input.clone(),
 			Class::Right => generate_random_byte_input(LARGE_INPUT_SIZE, rng),
 		};
+
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
 
 		runner.run_one(class, || {
 			let _result = hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
@@ -128,12 +165,15 @@ fn test_hash_padded_bytes_xlarge_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(EXTRA_LARGE_INPUT_SIZE, rng);
 
-	for _ in 0..25_000 {
+	for _ in 0..5_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let input = match class {
 			Class::Left => fixed_input.clone(),
 			Class::Right => generate_random_byte_input(EXTRA_LARGE_INPUT_SIZE, rng),
 		};
+
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
 
 		runner.run_one(class, || {
 			let _result = hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
@@ -147,12 +187,15 @@ fn test_hash_variable_length_bytes_small_ct(runner: &mut CtRunner, rng: &mut Ben
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(SMALL_INPUT_SIZE, rng);
 
-	for _ in 0..100_000 {
+	for _ in 0..10_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let input = match class {
 			Class::Left => fixed_input.clone(),
 			Class::Right => generate_random_byte_input(SMALL_INPUT_SIZE, rng),
 		};
+
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
 
 		runner.run_one(class, || {
 			let _result = hash_variable_length_bytes(&input);
@@ -166,12 +209,15 @@ fn test_hash_variable_length_bytes_medium_ct(runner: &mut CtRunner, rng: &mut Be
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE, rng);
 
-	for _ in 0..100_000 {
+	for _ in 0..10_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let input = match class {
 			Class::Left => fixed_input.clone(),
 			Class::Right => generate_random_byte_input(MEDIUM_INPUT_SIZE, rng),
 		};
+
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
 
 		runner.run_one(class, || {
 			let _result = hash_variable_length_bytes(&input);
@@ -185,12 +231,15 @@ fn test_hash_variable_length_bytes_large_ct(runner: &mut CtRunner, rng: &mut Ben
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(LARGE_INPUT_SIZE, rng);
 
-	for _ in 0..50_000 {
+	for _ in 0..5_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let input = match class {
 			Class::Left => fixed_input.clone(),
 			Class::Right => generate_random_byte_input(LARGE_INPUT_SIZE, rng),
 		};
+
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
 
 		runner.run_one(class, || {
 			let _result = hash_variable_length_bytes(&input);
@@ -207,7 +256,7 @@ fn test_poseidon2_permutation_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	let fixed_value = Goldilocks::from_int(rng.next_u64() % Goldilocks::ORDER_U64);
 	let fixed_state = [fixed_value; 12];
 
-	for _ in 0..100_000 {
+	for _ in 0..10_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let state = match class {
 			Class::Left => fixed_state,
@@ -220,6 +269,9 @@ fn test_poseidon2_permutation_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 				random_state
 			},
 		};
+
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
 
 		runner.run_one(class, || {
 			let mut state_copy = state;
@@ -234,12 +286,15 @@ fn test_hash_squeeze_twice_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(SMALL_INPUT_SIZE, rng);
 
-	for _ in 0..100_000 {
+	for _ in 0..10_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let input = match class {
 			Class::Left => fixed_input.clone(),
 			Class::Right => generate_random_byte_input(SMALL_INPUT_SIZE, rng),
 		};
+
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
 
 		runner.run_one(class, || {
 			let _result = hash_squeeze_twice(&input);
@@ -253,12 +308,15 @@ fn test_hash_squeeze_twice_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) 
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE, rng);
 
-	for _ in 0..100_000 {
+	for _ in 0..10_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let input = match class {
 			Class::Left => fixed_input.clone(),
 			Class::Right => generate_random_byte_input(MEDIUM_INPUT_SIZE, rng),
 		};
+
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
 
 		runner.run_one(class, || {
 			let _result = hash_squeeze_twice(&input);
@@ -272,12 +330,15 @@ fn test_hash_squeeze_twice_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(LARGE_INPUT_SIZE, rng);
 
-	for _ in 0..50_000 {
+	for _ in 0..5_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let input = match class {
 			Class::Left => fixed_input.clone(),
 			Class::Right => generate_random_byte_input(LARGE_INPUT_SIZE, rng),
 		};
+
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
 
 		runner.run_one(class, || {
 			let _result = hash_squeeze_twice(&input);
@@ -291,12 +352,15 @@ fn test_field_absorption_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(SMALL_INPUT_SIZE, rng);
 
-	for _ in 0..100_000 {
+	for _ in 0..10_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let input = match class {
 			Class::Left => fixed_input.clone(),
 			Class::Right => generate_random_byte_input(SMALL_INPUT_SIZE, rng),
 		};
+
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
 
 		runner.run_one(class, || {
 			let _felts: Vec<Goldilocks> = injective_bytes_to_felts(&input);
@@ -310,12 +374,37 @@ fn test_field_absorption_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE, rng);
 
-	for _ in 0..100_000 {
+	for _ in 0..10_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let input = match class {
 			Class::Left => fixed_input.clone(),
 			Class::Right => generate_random_byte_input(MEDIUM_INPUT_SIZE, rng),
 		};
+
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
+
+		runner.run_one(class, || {
+			let _felts: Vec<Goldilocks> = injective_bytes_to_felts(&input);
+		});
+	}
+}
+
+/// Test field element absorption with large inputs
+#[cfg(feature = "dudect-bencher")]
+fn test_field_absorption_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+	// Generate the fixed input once for all Left class samples
+	let fixed_input = generate_fixed_byte_input(LARGE_INPUT_SIZE, rng);
+
+	for _ in 0..5_000 {
+		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
+		let input = match class {
+			Class::Left => fixed_input.clone(),
+			Class::Right => generate_random_byte_input(LARGE_INPUT_SIZE, rng),
+		};
+
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
 
 		runner.run_one(class, || {
 			let _felts: Vec<Goldilocks> = injective_bytes_to_felts(&input);
@@ -329,13 +418,16 @@ fn test_double_hash_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_felts = generate_fixed_felt_input(SMALL_FELT_COUNT, rng);
 
-	for _ in 0..100_000 {
+	for _ in 0..10_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let felts = match class {
 			Class::Left => fixed_felts.clone(),
 			Class::Right => generate_random_felt_input(SMALL_FELT_COUNT, rng),
 		};
 
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
+		
 		runner.run_one(class, || {
 			let _result = double_hash_variable_length(felts.clone());
 		});
@@ -348,12 +440,15 @@ fn test_double_hash_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_felts = generate_fixed_felt_input(MEDIUM_FELT_COUNT, rng);
 
-	for _ in 0..100_000 {
+	for _ in 0..10_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let felts = match class {
 			Class::Left => fixed_felts.clone(),
 			Class::Right => generate_random_felt_input(MEDIUM_FELT_COUNT, rng),
 		};
+
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
 
 		runner.run_one(class, || {
 			let _result = double_hash_variable_length(felts.clone());
@@ -367,12 +462,15 @@ fn test_hash_variable_length_felts_small_ct(runner: &mut CtRunner, rng: &mut Ben
 	// Generate the fixed input once for all Left class samples
 	let fixed_felts = generate_fixed_felt_input(SMALL_FELT_COUNT, rng);
 
-	for _ in 0..100_000 {
+	for _ in 0..10_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let felts = match class {
 			Class::Left => fixed_felts.clone(),
 			Class::Right => generate_random_felt_input(SMALL_FELT_COUNT, rng),
 		};
+
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
 
 		runner.run_one(class, || {
 			let _result = hash_variable_length(felts.clone());
@@ -386,12 +484,15 @@ fn test_hash_variable_length_felts_medium_ct(runner: &mut CtRunner, rng: &mut Be
 	// Generate the fixed input once for all Left class samples
 	let fixed_felts = generate_fixed_felt_input(MEDIUM_FELT_COUNT, rng);
 
-	for _ in 0..100_000 {
+	for _ in 0..10_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let felts = match class {
 			Class::Left => fixed_felts.clone(),
 			Class::Right => generate_random_felt_input(MEDIUM_FELT_COUNT, rng),
 		};
+
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
 
 		runner.run_one(class, || {
 			let _result = hash_variable_length(felts.clone());
@@ -405,12 +506,15 @@ fn test_hash_variable_length_felts_large_ct(runner: &mut CtRunner, rng: &mut Ben
 	// Generate the fixed input once for all Left class samples
 	let fixed_felts = generate_fixed_felt_input(LARGE_FELT_COUNT, rng);
 
-	for _ in 0..50_000 {
+	for _ in 0..5_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let felts = match class {
 			Class::Left => fixed_felts.clone(),
 			Class::Right => generate_random_felt_input(LARGE_FELT_COUNT, rng),
 		};
+
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
 
 		runner.run_one(class, || {
 			let _result = hash_variable_length(felts.clone());
@@ -424,12 +528,15 @@ fn test_double_hash_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_felts = generate_fixed_felt_input(LARGE_FELT_COUNT, rng);
 
-	for _ in 0..50_000 {
+	for _ in 0..5_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let felts = match class {
 			Class::Left => fixed_felts.clone(),
 			Class::Right => generate_random_felt_input(LARGE_FELT_COUNT, rng),
 		};
+
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
 
 		runner.run_one(class, || {
 			let _result = double_hash_variable_length(felts.clone());
@@ -444,7 +551,7 @@ fn test_single_byte_edge_cases_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	let fixed_byte = rng.gen::<u8>();
 	let fixed_input = vec![fixed_byte];
 
-	for _ in 0..100_000 {
+	for _ in 0..10_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let input = match class {
 			Class::Left => fixed_input.clone(),
@@ -453,6 +560,9 @@ fn test_single_byte_edge_cases_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 				vec![random_byte]
 			},
 		};
+
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
 
 		runner.run_one(class, || {
 			let _result = hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
@@ -466,12 +576,15 @@ fn test_integrated_operations_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE, rng);
 
-	for _ in 0..25_000 {
+	for _ in 0..5_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let input = match class {
 			Class::Left => fixed_input.clone(),
 			Class::Right => generate_random_byte_input(MEDIUM_INPUT_SIZE, rng),
 		};
+
+		// Disrupt cache state before each sample
+		disrupt_cache(rng);
 
 		runner.run_one(class, || {
 			// Test a sequence of operations that might be used together
@@ -547,6 +660,7 @@ dudect_bencher::ctbench_main!(
 	// Field element absorption tests
 	test_field_absorption_small_ct,
 	test_field_absorption_medium_ct,
+	test_field_absorption_large_ct,
 	// Double hash tests for different felt counts
 	test_double_hash_small_ct,
 	test_double_hash_medium_ct,

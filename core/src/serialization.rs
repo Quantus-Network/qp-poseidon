@@ -114,23 +114,31 @@ pub fn try_felts_to_u64<G: GoldiCompat>(felts: [G; FELTS_PER_U64]) -> Result<u64
 /// chose to do 32 bits for simplicity.
 pub fn injective_bytes_to_felts<G: GoldiCompat>(input: &[u8]) -> Vec<G> {
 	const BYTES_PER_ELEMENT: usize = 4;
-	let mut out = Vec::new();
 
-	let mut padded_input = input.to_vec();
-	// Mark end with 1u8
+	// Calculate exact final size to avoid any reallocation
+	let input_len = input.len();
+	let len_with_marker = input_len + 1; // +1 for end marker
+	let padding_needed =
+		(BYTES_PER_ELEMENT - (len_with_marker % BYTES_PER_ELEMENT)) % BYTES_PER_ELEMENT;
+	let final_padded_size = len_with_marker + padding_needed;
+	let num_elements = final_padded_size / BYTES_PER_ELEMENT;
+
+	// Pre-allocate exact sizes - no reallocation will occur
+	let mut padded_input = Vec::<u8>::with_capacity(final_padded_size);
+	let mut out = Vec::<G>::with_capacity(num_elements);
+
+	// Copy input data - no reallocation
+	padded_input.extend_from_slice(input);
+
+	// Add end marker - no reallocation (capacity was pre-allocated)
 	padded_input.push(1u8);
-	let mod_len = padded_input.len() % BYTES_PER_ELEMENT;
-	if mod_len != 0 {
-		// Fill to BYTES_PER_ELEMENT alignment with 0u8s
-		padded_input.resize(padded_input.len() + BYTES_PER_ELEMENT - mod_len, 0u8);
-	}
 
-	let chunks = padded_input.chunks(BYTES_PER_ELEMENT);
-	assert!(padded_input.chunks_exact(BYTES_PER_ELEMENT).remainder().is_empty());
+	// Add padding zeros - no reallocation (resize to pre-calculated size)
+	padded_input.resize(final_padded_size, 0u8);
 
-	for chunk in chunks {
-		let mut bytes = [0u8; BYTES_PER_ELEMENT];
-		bytes[..chunk.len()].copy_from_slice(chunk);
+	// Process in fixed chunks - no dynamic allocation
+	for chunk in padded_input.chunks_exact(BYTES_PER_ELEMENT) {
+		let bytes = [chunk[0], chunk[1], chunk[2], chunk[3]];
 		out.push(G::from_u64(u32::from_le_bytes(bytes) as u64));
 	}
 
