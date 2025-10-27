@@ -126,6 +126,9 @@ pub fn poseidon2_from_seed(seed: u64) -> Poseidon2State {
 	}
 }
 
+// This function is for hashing field elements in the storage trie. It pads to 189 field elements because
+// the zk-circuit we use for transaction inclusion verifies a storage proof and requires a fixed amount of field elements 
+// (the maximum that could be enountered in the storage proof) as a preimage
 fn hash_circuit_padding_felts<const C: usize>(mut x: Vec<Goldilocks>) -> [u8; 32] {
 	// This function doesn't protect against length extension attacks but is safe as
 	// long as the input felts are the outputs of an injective encoding.

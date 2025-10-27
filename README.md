@@ -35,10 +35,11 @@ The implementation is optimized for:
 
 ## 🔒 Security
 
-- Uses battle-tested plonky3 field arithmetic
 - Implements the standard Poseidon2 permutation
-- Circuit-compatible padding prevents length extension attacks
-- WARNING: Code is NOT CONSTANT TIME
+- Constants are verifiably random, based on pi and ChaCha20
+- Circuit-compatible padding
+- Variable length padding consistent with original paper
+- WARNING: Code is NOT CONSTANT TIME, this could be exploited by attackers to infer information about the length of the input data. There are no branches in the processing of blocks, so we do not expect any side-channel attacks to reveal the contents of the preimage. 
 
 ## 📄 License
 
