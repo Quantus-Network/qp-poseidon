@@ -34,9 +34,10 @@ const MEDIUM_FELT_COUNT: usize = 32;
 const LARGE_FELT_COUNT: usize = 128;
 
 /// Generate a fixed input for Left class (same for all samples) and random input for Right class
-fn generate_fixed_byte_input(size: usize) -> Vec<u8> {
-	// Always use 0xFF for the fixed input
-	vec![0xFFu8; size]
+fn generate_fixed_byte_input(size: usize, rng: &mut BenchRng) -> Vec<u8> {
+	// Pick a byte and repeat
+	let byte = rng.gen::<u8>();
+	vec![byte; size]
 }
 
 /// Generate a random byte input for Right class
@@ -47,9 +48,11 @@ fn generate_random_byte_input(size: usize, rng: &mut BenchRng) -> Vec<u8> {
 }
 
 /// Generate a fixed field element input for Left class (same for all samples)
-fn generate_fixed_felt_input(count: usize) -> Vec<Goldilocks> {
+fn generate_fixed_felt_input(count: usize, rng: &mut BenchRng) -> Vec<Goldilocks> {
 	// Always use ZERO for the fixed input
-	vec![Goldilocks::ZERO; count]
+	let val = rng.next_u64() % Goldilocks::ORDER_U64;
+	let felt = Goldilocks::from_int(val);
+	vec![felt; count]
 }
 
 /// Generate a random field element input for Right class
@@ -66,7 +69,7 @@ fn generate_random_felt_input(count: usize, rng: &mut BenchRng) -> Vec<Goldilock
 #[cfg(feature = "dudect-bencher")]
 fn test_hash_padded_bytes_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
-	let fixed_input = generate_fixed_byte_input(SMALL_INPUT_SIZE);
+	let fixed_input = generate_fixed_byte_input(SMALL_INPUT_SIZE, rng);
 
 	for _ in 0..100_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
@@ -85,7 +88,7 @@ fn test_hash_padded_bytes_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 #[cfg(feature = "dudect-bencher")]
 fn test_hash_padded_bytes_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
-	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE);
+	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE, rng);
 
 	for _ in 0..100_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
@@ -104,7 +107,7 @@ fn test_hash_padded_bytes_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 #[cfg(feature = "dudect-bencher")]
 fn test_hash_padded_bytes_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
-	let fixed_input = generate_fixed_byte_input(LARGE_INPUT_SIZE);
+	let fixed_input = generate_fixed_byte_input(LARGE_INPUT_SIZE, rng);
 
 	for _ in 0..50_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
@@ -123,7 +126,7 @@ fn test_hash_padded_bytes_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 #[cfg(feature = "dudect-bencher")]
 fn test_hash_padded_bytes_xlarge_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
-	let fixed_input = generate_fixed_byte_input(EXTRA_LARGE_INPUT_SIZE);
+	let fixed_input = generate_fixed_byte_input(EXTRA_LARGE_INPUT_SIZE, rng);
 
 	for _ in 0..25_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
@@ -142,7 +145,7 @@ fn test_hash_padded_bytes_xlarge_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 #[cfg(feature = "dudect-bencher")]
 fn test_hash_variable_length_bytes_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
-	let fixed_input = generate_fixed_byte_input(SMALL_INPUT_SIZE);
+	let fixed_input = generate_fixed_byte_input(SMALL_INPUT_SIZE, rng);
 
 	for _ in 0..100_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
@@ -161,7 +164,7 @@ fn test_hash_variable_length_bytes_small_ct(runner: &mut CtRunner, rng: &mut Ben
 #[cfg(feature = "dudect-bencher")]
 fn test_hash_variable_length_bytes_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
-	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE);
+	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE, rng);
 
 	for _ in 0..100_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
@@ -180,7 +183,7 @@ fn test_hash_variable_length_bytes_medium_ct(runner: &mut CtRunner, rng: &mut Be
 #[cfg(feature = "dudect-bencher")]
 fn test_hash_variable_length_bytes_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
-	let fixed_input = generate_fixed_byte_input(LARGE_INPUT_SIZE);
+	let fixed_input = generate_fixed_byte_input(LARGE_INPUT_SIZE, rng);
 
 	for _ in 0..50_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
@@ -201,7 +204,8 @@ fn test_poseidon2_permutation_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	let poseidon = qp_poseidon_core::constants::create_poseidon();
 
 	// Generate the fixed state once for all Left class samples
-	let fixed_state = [Goldilocks::ZERO; 12];
+	let fixed_value = Goldilocks::from_int(rng.next_u64() % Goldilocks::ORDER_U64);
+	let fixed_state = [fixed_value; 12];
 
 	for _ in 0..100_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
@@ -214,7 +218,7 @@ fn test_poseidon2_permutation_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 					random_state[i] = Goldilocks::from_int(val);
 				}
 				random_state
-			}
+			},
 		};
 
 		runner.run_one(class, || {
@@ -228,7 +232,7 @@ fn test_poseidon2_permutation_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 #[cfg(feature = "dudect-bencher")]
 fn test_hash_squeeze_twice_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
-	let fixed_input = generate_fixed_byte_input(SMALL_INPUT_SIZE);
+	let fixed_input = generate_fixed_byte_input(SMALL_INPUT_SIZE, rng);
 
 	for _ in 0..100_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
@@ -247,7 +251,7 @@ fn test_hash_squeeze_twice_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 #[cfg(feature = "dudect-bencher")]
 fn test_hash_squeeze_twice_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
-	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE);
+	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE, rng);
 
 	for _ in 0..100_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
@@ -266,7 +270,7 @@ fn test_hash_squeeze_twice_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) 
 #[cfg(feature = "dudect-bencher")]
 fn test_hash_squeeze_twice_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
-	let fixed_input = generate_fixed_byte_input(LARGE_INPUT_SIZE);
+	let fixed_input = generate_fixed_byte_input(LARGE_INPUT_SIZE, rng);
 
 	for _ in 0..50_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
@@ -285,7 +289,7 @@ fn test_hash_squeeze_twice_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 #[cfg(feature = "dudect-bencher")]
 fn test_field_absorption_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
-	let fixed_input = generate_fixed_byte_input(SMALL_INPUT_SIZE);
+	let fixed_input = generate_fixed_byte_input(SMALL_INPUT_SIZE, rng);
 
 	for _ in 0..100_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
@@ -304,7 +308,7 @@ fn test_field_absorption_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 #[cfg(feature = "dudect-bencher")]
 fn test_field_absorption_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
-	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE);
+	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE, rng);
 
 	for _ in 0..100_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
@@ -323,7 +327,7 @@ fn test_field_absorption_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 #[cfg(feature = "dudect-bencher")]
 fn test_double_hash_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
-	let fixed_felts = generate_fixed_felt_input(SMALL_FELT_COUNT);
+	let fixed_felts = generate_fixed_felt_input(SMALL_FELT_COUNT, rng);
 
 	for _ in 0..100_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
@@ -342,7 +346,7 @@ fn test_double_hash_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 #[cfg(feature = "dudect-bencher")]
 fn test_double_hash_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
-	let fixed_felts = generate_fixed_felt_input(MEDIUM_FELT_COUNT);
+	let fixed_felts = generate_fixed_felt_input(MEDIUM_FELT_COUNT, rng);
 
 	for _ in 0..100_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
@@ -361,7 +365,7 @@ fn test_double_hash_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 #[cfg(feature = "dudect-bencher")]
 fn test_hash_variable_length_felts_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
-	let fixed_felts = generate_fixed_felt_input(SMALL_FELT_COUNT);
+	let fixed_felts = generate_fixed_felt_input(SMALL_FELT_COUNT, rng);
 
 	for _ in 0..100_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
@@ -380,7 +384,7 @@ fn test_hash_variable_length_felts_small_ct(runner: &mut CtRunner, rng: &mut Ben
 #[cfg(feature = "dudect-bencher")]
 fn test_hash_variable_length_felts_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
-	let fixed_felts = generate_fixed_felt_input(MEDIUM_FELT_COUNT);
+	let fixed_felts = generate_fixed_felt_input(MEDIUM_FELT_COUNT, rng);
 
 	for _ in 0..100_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
@@ -399,7 +403,7 @@ fn test_hash_variable_length_felts_medium_ct(runner: &mut CtRunner, rng: &mut Be
 #[cfg(feature = "dudect-bencher")]
 fn test_hash_variable_length_felts_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
-	let fixed_felts = generate_fixed_felt_input(LARGE_FELT_COUNT);
+	let fixed_felts = generate_fixed_felt_input(LARGE_FELT_COUNT, rng);
 
 	for _ in 0..50_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
@@ -418,7 +422,7 @@ fn test_hash_variable_length_felts_large_ct(runner: &mut CtRunner, rng: &mut Ben
 #[cfg(feature = "dudect-bencher")]
 fn test_double_hash_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
-	let fixed_felts = generate_fixed_felt_input(LARGE_FELT_COUNT);
+	let fixed_felts = generate_fixed_felt_input(LARGE_FELT_COUNT, rng);
 
 	for _ in 0..50_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
@@ -437,7 +441,8 @@ fn test_double_hash_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 #[cfg(feature = "dudect-bencher")]
 fn test_single_byte_edge_cases_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
-	let fixed_input = vec![0xFFu8];
+	let fixed_byte = rng.gen::<u8>();
+	let fixed_input = vec![fixed_byte];
 
 	for _ in 0..100_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
@@ -446,7 +451,7 @@ fn test_single_byte_edge_cases_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 			Class::Right => {
 				let random_byte = rng.next_u32() as u8;
 				vec![random_byte]
-			}
+			},
 		};
 
 		runner.run_one(class, || {
@@ -459,7 +464,7 @@ fn test_single_byte_edge_cases_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 #[cfg(feature = "dudect-bencher")]
 fn test_integrated_operations_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
-	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE);
+	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE, rng);
 
 	for _ in 0..25_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
@@ -486,22 +491,24 @@ mod tests {
 		let mut rng = BenchRng::new();
 
 		// Test byte input generation
-		let fixed = generate_fixed_byte_input(32);
+		let fixed = generate_fixed_byte_input(32, &mut rng);
 		let random = generate_random_byte_input(32, &mut rng);
 		assert_eq!(fixed.len(), 32);
 		assert_eq!(random.len(), 32);
 
-		// Fixed should be all 0xFF
-		assert!(fixed.iter().all(|&b| b == 0xFF));
+		// Fixed should be all the same value
+		let first_byte = fixed[0];
+		assert!(fixed.iter().all(|&b| b == first_byte));
 
 		// Test felt input generation
-		let fixed_felts = generate_fixed_felt_input(8);
+		let fixed_felts = generate_fixed_felt_input(8, &mut rng);
 		let random_felts = generate_random_felt_input(8, &mut rng);
 		assert_eq!(fixed_felts.len(), 8);
 		assert_eq!(random_felts.len(), 8);
 
-		// Fixed should be all ZERO
-		assert!(fixed_felts.iter().all(|&f| f == Goldilocks::ZERO));
+		// Fixed should be all the same value
+		let first_felt = fixed_felts[0];
+		assert!(fixed_felts.iter().all(|&f| f == first_felt));
 	}
 
 	#[test]
