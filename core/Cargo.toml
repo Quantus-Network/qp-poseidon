@@ -31,6 +31,9 @@ p3-symmetric = { workspace = true, optional = true }
 # Plonky2 stack
 qp-plonky2 = { workspace = true, optional = true }
 
+# Constant-time testing (optional for binaries)
+dudect-bencher = { version = "0.6", optional = true }
+
 [dev-dependencies]
 hex.workspace = true
 criterion.workspace = true
@@ -39,6 +42,7 @@ criterion.workspace = true
 # Keep no_std by default; choose Plonky3 as the default backend to preserve current behavior.
 default = ["p3"]
 std = [] # forward-compatible if you later want std-only niceties
+ct-testing = ["std", "dudect-bencher"] # Enable constant-time testing features
 p3 = [
 	"dep:p3-field",
 	"dep:p3-goldilocks",
@@ -50,6 +54,13 @@ p2 = ["dep:qp-plonky2"]
 [[bin]]
 name = "extract_constants"
 path = "build_helpers/extract_constants.rs"
+
+[[bin]]
+name = "ct_bench"
+required-features = ["ct-testing"]
+
+
+
 
 [[bench]]
 name = "poseidon_benchmarks"

@@ -154,6 +154,7 @@ pub fn hash_variable_length(x: Vec<Goldilocks>) -> [u8; 32] {
 	st.append(&x);
 	st.finalize()
 }
+
 /// Double hash (preimage -> hash -> hash) field elements without any padding
 pub fn double_hash_variable_length(x: Vec<Goldilocks>) -> [u8; 32] {
 	let mut st = Poseidon2State::new();

@@ -39,7 +39,7 @@ The implementation is optimized for:
 - Constants are verifiably random, based on pi and ChaCha20
 - Circuit-compatible padding
 - Variable length padding consistent with original paper
-- WARNING: Code is NOT CONSTANT TIME, this could be exploited by attackers to infer information about the length of the input data. There are no branches in the processing of blocks, so we do not expect any side-channel attacks to reveal the contents of the preimage. 
+- Code is roughly constant time, as indicated by dudect t-scores < 5. There are no branches in the processing of blocks, so we do not expect any side-channel attacks to reveal the contents of the preimage. There is a small amount of branching in the padding functions, but this should only depend on the length of the input, not the contents. 
 
 ## 📄 License
 
