@@ -1,5 +1,5 @@
 use crate::OUTPUT;
-use alloc::vec::Vec;
+use alloc::{string::String, vec::Vec};
 
 const BIT_32_LIMB_MASK: u64 = 0xFFFF_FFFF;
 
@@ -63,20 +63,50 @@ pub mod p2_backend {
 }
 
 pub const DIGEST_BYTES_PER_ELEMENT: usize = 8;
+pub const FELTS_PER_U128: usize = 4;
+pub const FELTS_PER_U64: usize = 2;
 
-pub fn u128_to_felts<G: GoldiCompat>(num: u128) -> Vec<G> {
-	const FELTS_PER_U128: usize = 4;
-	(0..FELTS_PER_U128)
-		.map(|i| {
-			let shift = 96 - 32 * i;
-			let limb = ((num >> shift) & BIT_32_LIMB_MASK as u128) as u64;
-			G::from_u64(limb)
-		})
-		.collect()
+#[inline]
+fn as_32_bit_limb<G: GoldiCompat>(felt: G, index: usize) -> Result<u64, String> {
+	// Prefer canonical value when checking width.
+	let v = felt.to_u64();
+	if v <= BIT_32_LIMB_MASK {
+		Ok(v)
+	} else {
+		Err(alloc::format!("Felt at index {} with value {} exceeds 32-bit limb size", index, v))
+	}
 }
 
-pub fn u64_to_felts<G: GoldiCompat>(num: u64) -> Vec<G> {
-	alloc::vec![G::from_u64((num >> 32) & BIT_32_LIMB_MASK), G::from_u64(num & BIT_32_LIMB_MASK),]
+pub fn u128_to_felts<G: GoldiCompat>(num: u128) -> [G; FELTS_PER_U128] {
+	let mut result = [G::from_u64(0); FELTS_PER_U128];
+	for (i, value) in result.iter_mut().enumerate() {
+		let shift = 96 - 32 * i;
+		*value = G::from_u64(((num >> shift) & BIT_32_LIMB_MASK as u128) as u64);
+	}
+	result
+}
+
+pub fn u64_to_felts<G: GoldiCompat>(num: u64) -> [G; FELTS_PER_U64] {
+	[G::from_u64((num >> 32) & BIT_32_LIMB_MASK), G::from_u64(num & BIT_32_LIMB_MASK)]
+}
+
+pub fn try_felts_to_u128<G: GoldiCompat>(felts: [G; FELTS_PER_U128]) -> Result<u128, String> {
+	let mut out = 0u128;
+	for (i, felt) in felts.into_iter().enumerate() {
+		let limb = as_32_bit_limb(felt, i)?; // validate < 2^32
+		out |= (limb as u128) << (96 - 32 * i);
+	}
+	Ok(out)
+}
+
+pub fn try_felts_to_u64<G: GoldiCompat>(felts: [G; FELTS_PER_U64]) -> Result<u64, String> {
+	let mut out = 0u64;
+	for (i, felt) in felts.into_iter().enumerate() {
+		let limb = as_32_bit_limb(felt, i)?; // validate < 2^32
+									   // i = 0 -> shift 32, i = 1 -> shift 0
+		out |= limb << (32 - 32 * i);
+	}
+	Ok(out)
 }
 
 /// Injective, 4 bytes → 1 felt, input is variable-length padded with 1, 0... to align with u32 size
@@ -139,8 +169,9 @@ pub fn try_injective_felts_to_bytes<G: GoldiCompat>(input: &[G]) -> Result<Vec<u
 
 	const BYTES_PER_ELEMENT: usize = 4;
 	let mut words: Vec<[u8; BYTES_PER_ELEMENT]> = Vec::with_capacity(input.len());
-	for felt in input {
-		words.push((G::to_u64(*felt) as u32).to_le_bytes());
+	for (i, felt) in input.iter().enumerate() {
+		let value = as_32_bit_limb(*felt, i).map_err(|_| "Felt value exceeds 32 bits")?;
+		words.push((value as u32).to_le_bytes());
 	}
 
 	let mut out = Vec::new();
@@ -191,36 +222,6 @@ mod tests {
 	use p3_field::{integers::QuotientMap, PrimeField64};
 
 	#[test]
-	fn test_utility_functions() {
-		// Test u64_to_felts
-		let num = 0x1234567890ABCDEF;
-		let felts = u64_to_felts::<Goldilocks>(num);
-		assert_eq!(felts.len(), 2);
-
-		// Test u128_to_felts
-		let large_num = 0x123456789ABCDEF0123456789ABCDEF0u128;
-		let felts = u128_to_felts::<Goldilocks>(large_num);
-		assert_eq!(felts.len(), 4);
-
-		// Test string conversion
-		let text = "hello";
-		let felts = injective_string_to_felts::<Goldilocks>(text);
-		assert_eq!(felts.len(), 2);
-
-		// Test round-trip conversion
-		let original_bytes = b"test data";
-		let felts = injective_bytes_to_felts::<Goldilocks>(original_bytes);
-		let recovered_bytes = try_injective_felts_to_bytes(&felts).unwrap();
-		// Should match the original
-		assert_eq!(&recovered_bytes, original_bytes);
-		// try injective felts to bytes should fail for malformed input
-		let malformed_felts =
-			vec![Goldilocks::from_int(0xFFFFFFFF as i64), Goldilocks::from_int(0xFFFFFFFF as i64)];
-		let result = try_injective_felts_to_bytes(&malformed_felts);
-		assert!(result.is_err(), "Malformed input should return an error");
-	}
-
-	#[test]
 	fn test_u64_round_trip() {
 		let test_values = vec![
 			0u64,
@@ -234,12 +235,9 @@ mod tests {
 
 		for &original in &test_values {
 			let felts = u64_to_felts::<Goldilocks>(original);
-			assert_eq!(felts.len(), 2, "u64 should convert to exactly 2 felts");
 
-			// Reconstruct the u64 from felts
-			let high = felts[0].as_canonical_u64();
-			let low = felts[1].as_canonical_u64();
-			let reconstructed = (high << 32) | low;
+			let reconstructed = try_felts_to_u64::<Goldilocks>(felts)
+				.expect(&format!("Failed to reconstruct u64 for input: {}", original));
 
 			assert_eq!(original, reconstructed, "u64 round-trip failed for {}", original);
 		}
@@ -259,14 +257,10 @@ mod tests {
 
 		for &original in &test_values {
 			let felts = u128_to_felts::<Goldilocks>(original);
-			assert_eq!(felts.len(), 4, "u128 should convert to exactly 4 felts");
 
 			// Reconstruct the u128 from felts
-			let mut reconstructed = 0u128;
-			for (i, felt) in felts.iter().enumerate() {
-				let shift = 96 - 32 * i;
-				reconstructed |= (felt.as_canonical_u64() as u128) << shift;
-			}
+			let reconstructed = try_felts_to_u128::<Goldilocks>(felts)
+				.expect(&format!("Failed to reconstruct u128 for input: {}", original));
 
 			assert_eq!(original, reconstructed, "u128 round-trip failed for {}", original);
 		}
@@ -376,8 +370,9 @@ mod tests {
 	}
 
 	#[test]
-	fn test_malformed_input_error_cases() {
-		// Test malformed felts that don't have proper terminator
+	fn test_malformed_bytes_input_error_cases() {
+		// Test malformed felts that don't have proper terminator or too large to fit in 32 bit
+		// limbs
 		let malformed_cases = vec![
 			// No terminator at all - all non-terminator values
 			vec![Goldilocks::from_int(0x12345678), Goldilocks::from_int(0x1ABCDEF0)],
@@ -388,12 +383,32 @@ mod tests {
 			],
 			// All high values that don't form proper termination
 			vec![Goldilocks::from_int(0x7FFFFFFF), Goldilocks::from_int(0x7FFFFFFF)],
+			// Exceeds 32-bit limb size
+			vec![Goldilocks::from_int(0x1_0000_0000 as i64), Goldilocks::from_int(0x00000001)],
 		];
 
 		for malformed_felts in &malformed_cases {
 			let result = try_injective_felts_to_bytes(&malformed_felts);
 			assert!(result.is_err(), "Malformed input should return error: {:?}", malformed_felts);
 		}
+	}
+
+	#[test]
+	fn test_felt_width_error_handling() {
+		// Create felts that exceed 32-bit limb size for u64 conversion
+		let invalid_felts =
+			[Goldilocks::from_int(0x1_0000_0000 as i64), Goldilocks::from_int(0xFFFFFFFF as i64)];
+		let result = try_felts_to_u64::<Goldilocks>(invalid_felts);
+		assert!(result.is_err(), "Expected felt width error for invalid felts");
+		// Create felts that exceed 32-bit limb size for u128 conversion
+		let invalid_felts_u128 = [
+			Goldilocks::from_int(0x1_0000_0000 as i64),
+			Goldilocks::from_int(0x00000001 as i64),
+			Goldilocks::from_int(0xFFFFFFFF as i64),
+			Goldilocks::from_int(0x00000001 as i64),
+		];
+		let result = try_felts_to_u128::<Goldilocks>(invalid_felts_u128);
+		assert!(result.is_err(), "Expected felt width error for invalid felts in u128");
 	}
 
 	#[test]
