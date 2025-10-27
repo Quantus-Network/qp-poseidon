@@ -2,6 +2,12 @@
 //!
 //! This module tests that cryptographic operations in the Poseidon2 hash function
 //! execute in constant time, preventing timing side-channel attacks.
+//!
+//! Tests are organized by fixed input sizes with statistically distinguishable input classes:
+//! - Class A: Fixed pattern (all 0x00 or all 0xFF)
+//! - Class B: Random data
+//!
+//! This ensures the two classes are distinguishable before timing analysis begins.
 
 #[cfg(feature = "dudect-bencher")]
 use dudect_bencher::rand::{Rng, RngCore};
@@ -16,108 +22,201 @@ use qp_poseidon_core::*;
 
 const FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 189;
 
-/// Test that hash_padded_bytes executes in constant time for inputs of the same length
+// Test sizes in bytes
+const SMALL_INPUT_SIZE: usize = 32;
+const MEDIUM_INPUT_SIZE: usize = 256;
+const LARGE_INPUT_SIZE: usize = 1024;
+const EXTRA_LARGE_INPUT_SIZE: usize = 4096;
+
+// Field element test sizes
+const SMALL_FELT_COUNT: usize = 4;
+const MEDIUM_FELT_COUNT: usize = 32;
+const LARGE_FELT_COUNT: usize = 128;
+
+/// Generate a fixed input for Left class (same for all samples) and random input for Right class
+fn generate_fixed_byte_input(size: usize) -> Vec<u8> {
+	// Always use 0xFF for the fixed input
+	vec![0xFFu8; size]
+}
+
+/// Generate a random byte input for Right class
+fn generate_random_byte_input(size: usize, rng: &mut BenchRng) -> Vec<u8> {
+	let mut random_input = vec![0u8; size];
+	rng.fill_bytes(&mut random_input);
+	random_input
+}
+
+/// Generate a fixed field element input for Left class (same for all samples)
+fn generate_fixed_felt_input(count: usize) -> Vec<Goldilocks> {
+	// Always use ZERO for the fixed input
+	vec![Goldilocks::ZERO; count]
+}
+
+/// Generate a random field element input for Right class
+fn generate_random_felt_input(count: usize, rng: &mut BenchRng) -> Vec<Goldilocks> {
+	let mut random_input = Vec::with_capacity(count);
+	for _ in 0..count {
+		let val = rng.next_u64() % Goldilocks::ORDER_U64;
+		random_input.push(Goldilocks::from_int(val));
+	}
+	random_input
+}
+
+/// Test hash_padded_bytes with small inputs (32 bytes)
 #[cfg(feature = "dudect-bencher")]
-fn test_hash_padded_bytes_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
-	let mut inputs: Vec<(Vec<u8>, Class)> = Vec::new();
+fn test_hash_padded_bytes_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+	// Generate the fixed input once for all Left class samples
+	let fixed_input = generate_fixed_byte_input(SMALL_INPUT_SIZE);
 
-	// Generate test inputs with variable lengths
 	for _ in 0..100_000 {
-		// Use variable lengths between 16 and 5120 bytes (5KB)
-		let len1 = 16 + (rng.next_u32() % 5105) as usize; // 16-5120 bytes
-		let len2 = 16 + (rng.next_u32() % 5105) as usize; // 16-5120 bytes
-
-		let mut input1 = vec![0u8; len1];
-		let mut input2 = vec![0u8; len2];
-
-		rng.fill_bytes(&mut input1);
-		rng.fill_bytes(&mut input2);
-
-		// Ensure inputs are different to test worst case
-		input1[0] = 0xAA;
-		input2[0] = 0x55;
-
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let input = match class {
-			Class::Left => input1,
-			Class::Right => input2,
+			Class::Left => fixed_input.clone(),
+			Class::Right => generate_random_byte_input(SMALL_INPUT_SIZE, rng),
 		};
 
-		inputs.push((input, class));
-	}
-
-	for (input, class) in inputs {
 		runner.run_one(class, || {
 			let _result = hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
 		});
 	}
 }
 
-/// Test that hash_variable_length_bytes executes in constant time for inputs of the same length
+/// Test hash_padded_bytes with medium inputs (256 bytes)
 #[cfg(feature = "dudect-bencher")]
-fn test_hash_variable_length_bytes_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
-	let mut inputs: Vec<(Vec<u8>, Class)> = Vec::new();
+fn test_hash_padded_bytes_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+	// Generate the fixed input once for all Left class samples
+	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE);
 
-	// Generate test inputs with variable lengths
 	for _ in 0..100_000 {
-		// Use variable lengths between 8 and 5000 bytes
-		let len1 = 8 + (rng.next_u32() % 4993) as usize; // 8-5000 bytes
-		let len2 = 8 + (rng.next_u32() % 4993) as usize; // 8-5000 bytes
-
-		let mut input1 = vec![0u8; len1];
-		let mut input2 = vec![0u8; len2];
-
-		rng.fill_bytes(&mut input1);
-		rng.fill_bytes(&mut input2);
-
-		// Ensure inputs are different
-		input1[0] = 0xAA;
-		input2[0] = 0x55;
-
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let input = match class {
-			Class::Left => input1,
-			Class::Right => input2,
+			Class::Left => fixed_input.clone(),
+			Class::Right => generate_random_byte_input(MEDIUM_INPUT_SIZE, rng),
 		};
 
-		inputs.push((input, class));
+		runner.run_one(class, || {
+			let _result = hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+		});
 	}
+}
 
-	for (input, class) in inputs {
+/// Test hash_padded_bytes with large inputs (1KB)
+#[cfg(feature = "dudect-bencher")]
+fn test_hash_padded_bytes_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+	// Generate the fixed input once for all Left class samples
+	let fixed_input = generate_fixed_byte_input(LARGE_INPUT_SIZE);
+
+	for _ in 0..50_000 {
+		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
+		let input = match class {
+			Class::Left => fixed_input.clone(),
+			Class::Right => generate_random_byte_input(LARGE_INPUT_SIZE, rng),
+		};
+
+		runner.run_one(class, || {
+			let _result = hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+		});
+	}
+}
+
+/// Test hash_padded_bytes with extra large inputs (4KB)
+#[cfg(feature = "dudect-bencher")]
+fn test_hash_padded_bytes_xlarge_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+	// Generate the fixed input once for all Left class samples
+	let fixed_input = generate_fixed_byte_input(EXTRA_LARGE_INPUT_SIZE);
+
+	for _ in 0..25_000 {
+		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
+		let input = match class {
+			Class::Left => fixed_input.clone(),
+			Class::Right => generate_random_byte_input(EXTRA_LARGE_INPUT_SIZE, rng),
+		};
+
+		runner.run_one(class, || {
+			let _result = hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+		});
+	}
+}
+
+/// Test hash_variable_length_bytes with small inputs (32 bytes)
+#[cfg(feature = "dudect-bencher")]
+fn test_hash_variable_length_bytes_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+	// Generate the fixed input once for all Left class samples
+	let fixed_input = generate_fixed_byte_input(SMALL_INPUT_SIZE);
+
+	for _ in 0..100_000 {
+		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
+		let input = match class {
+			Class::Left => fixed_input.clone(),
+			Class::Right => generate_random_byte_input(SMALL_INPUT_SIZE, rng),
+		};
+
 		runner.run_one(class, || {
 			let _result = hash_variable_length_bytes(&input);
 		});
 	}
 }
 
-/// Test that the core Poseidon2 permutation executes in constant time
+/// Test hash_variable_length_bytes with medium inputs (256 bytes)
+#[cfg(feature = "dudect-bencher")]
+fn test_hash_variable_length_bytes_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+	// Generate the fixed input once for all Left class samples
+	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE);
+
+	for _ in 0..100_000 {
+		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
+		let input = match class {
+			Class::Left => fixed_input.clone(),
+			Class::Right => generate_random_byte_input(MEDIUM_INPUT_SIZE, rng),
+		};
+
+		runner.run_one(class, || {
+			let _result = hash_variable_length_bytes(&input);
+		});
+	}
+}
+
+/// Test hash_variable_length_bytes with large inputs (1KB)
+#[cfg(feature = "dudect-bencher")]
+fn test_hash_variable_length_bytes_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+	// Generate the fixed input once for all Left class samples
+	let fixed_input = generate_fixed_byte_input(LARGE_INPUT_SIZE);
+
+	for _ in 0..50_000 {
+		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
+		let input = match class {
+			Class::Left => fixed_input.clone(),
+			Class::Right => generate_random_byte_input(LARGE_INPUT_SIZE, rng),
+		};
+
+		runner.run_one(class, || {
+			let _result = hash_variable_length_bytes(&input);
+		});
+	}
+}
+
+/// Test the core Poseidon2 permutation with fixed state patterns
 #[cfg(feature = "dudect-bencher")]
 fn test_poseidon2_permutation_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	let poseidon = qp_poseidon_core::constants::create_poseidon();
-	let mut inputs: Vec<([Goldilocks; 12], Class)> = Vec::new();
 
-	// Generate test inputs
+	// Generate the fixed state once for all Left class samples
+	let fixed_state = [Goldilocks::ZERO; 12];
+
 	for _ in 0..100_000 {
-		let mut state1 = [Goldilocks::ZERO; 12];
-		let mut state2 = [Goldilocks::ZERO; 12];
-
-		for i in 0..12 {
-			let val1 = rng.next_u64() % Goldilocks::ORDER_U64;
-			let val2 = rng.next_u64() % Goldilocks::ORDER_U64;
-			state1[i] = Goldilocks::from_int(val1);
-			state2[i] = Goldilocks::from_int(val2);
-		}
-
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let state = match class {
-			Class::Left => state1,
-			Class::Right => state2,
+			Class::Left => fixed_state,
+			Class::Right => {
+				let mut random_state = [Goldilocks::ZERO; 12];
+				for i in 0..12 {
+					let val = rng.next_u64() % Goldilocks::ORDER_U64;
+					random_state[i] = Goldilocks::from_int(val);
+				}
+				random_state
+			}
 		};
 
-		inputs.push((state, class));
-	}
-
-	for (state, class) in inputs {
 		runner.run_one(class, || {
 			let mut state_copy = state;
 			poseidon.permute_mut(&mut state_copy);
@@ -125,183 +224,250 @@ fn test_poseidon2_permutation_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	}
 }
 
-/// Test that hash_squeeze_twice executes in constant time
+/// Test hash_squeeze_twice with small inputs (32 bytes)
 #[cfg(feature = "dudect-bencher")]
-fn test_hash_squeeze_twice_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
-	let mut inputs: Vec<(Vec<u8>, Class)> = Vec::new();
+fn test_hash_squeeze_twice_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+	// Generate the fixed input once for all Left class samples
+	let fixed_input = generate_fixed_byte_input(SMALL_INPUT_SIZE);
 
-	// Generate test inputs with variable lengths
 	for _ in 0..100_000 {
-		// Use variable lengths between 12 and 4096 bytes (4KB)
-		let len1 = 12 + (rng.next_u32() % 4085) as usize; // 12-4096 bytes
-		let len2 = 12 + (rng.next_u32() % 4085) as usize; // 12-4096 bytes
-
-		let mut input1 = vec![0u8; len1];
-		let mut input2 = vec![0u8; len2];
-
-		rng.fill_bytes(&mut input1);
-		rng.fill_bytes(&mut input2);
-
-		// Ensure inputs are different
-		input1[0] = 0xAA;
-		input2[0] = 0x55;
-
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let input = match class {
-			Class::Left => input1,
-			Class::Right => input2,
+			Class::Left => fixed_input.clone(),
+			Class::Right => generate_random_byte_input(SMALL_INPUT_SIZE, rng),
 		};
 
-		inputs.push((input, class));
-	}
-
-	for (input, class) in inputs {
 		runner.run_one(class, || {
 			let _result = hash_squeeze_twice(&input);
 		});
 	}
 }
 
-/// Test that field element absorption is constant time
+/// Test hash_squeeze_twice with medium inputs (256 bytes)
 #[cfg(feature = "dudect-bencher")]
-fn test_field_absorption_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
-	let mut inputs: Vec<(Vec<u8>, Class)> = Vec::new();
+fn test_hash_squeeze_twice_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+	// Generate the fixed input once for all Left class samples
+	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE);
 
-	// Generate test inputs with variable lengths
 	for _ in 0..100_000 {
-		// Use variable lengths between 4 and 2048 bytes (2KB)
-		let len1 = 4 + (rng.next_u32() % 2045) as usize; // 4-2048 bytes
-		let len2 = 4 + (rng.next_u32() % 2045) as usize; // 4-2048 bytes
-
-		let mut bytes1 = vec![0u8; len1];
-		let mut bytes2 = vec![0u8; len2];
-
-		rng.fill_bytes(&mut bytes1);
-		rng.fill_bytes(&mut bytes2);
-
-		// Ensure different inputs
-		bytes1[0] = 0xAA;
-		bytes2[0] = 0x55;
-
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
-		let bytes = match class {
-			Class::Left => bytes1,
-			Class::Right => bytes2,
+		let input = match class {
+			Class::Left => fixed_input.clone(),
+			Class::Right => generate_random_byte_input(MEDIUM_INPUT_SIZE, rng),
 		};
 
-		inputs.push((bytes, class));
-	}
-
-	for (bytes, class) in inputs {
 		runner.run_one(class, || {
-			let _felts: Vec<Goldilocks> = injective_bytes_to_felts(&bytes);
+			let _result = hash_squeeze_twice(&input);
 		});
 	}
 }
 
-/// Test that double hashing executes in constant time
+/// Test hash_squeeze_twice with large inputs (1KB)
 #[cfg(feature = "dudect-bencher")]
-fn test_double_hash_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
-	let mut inputs: Vec<(Vec<Goldilocks>, Class)> = Vec::new();
+fn test_hash_squeeze_twice_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+	// Generate the fixed input once for all Left class samples
+	let fixed_input = generate_fixed_byte_input(LARGE_INPUT_SIZE);
 
-	// Generate test inputs with variable lengths
-	for _ in 0..100_000 {
-		// Use variable lengths between 8 and 3072 bytes (3KB)
-		let len1 = 8 + (rng.next_u32() % 3065) as usize; // 8-3072 bytes
-		let len2 = 8 + (rng.next_u32() % 3065) as usize; // 8-3072 bytes
-
-		let mut bytes1 = vec![0u8; len1];
-		let mut bytes2 = vec![0u8; len2];
-
-		rng.fill_bytes(&mut bytes1);
-		rng.fill_bytes(&mut bytes2);
-
-		// Ensure different inputs
-		bytes1[0] = 0xAA;
-		bytes2[0] = 0x55;
-
-		let felts1 = injective_bytes_to_felts(&bytes1);
-		let felts2 = injective_bytes_to_felts(&bytes2);
-
+	for _ in 0..50_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
-		let felts = match class {
-			Class::Left => felts1,
-			Class::Right => felts2,
+		let input = match class {
+			Class::Left => fixed_input.clone(),
+			Class::Right => generate_random_byte_input(LARGE_INPUT_SIZE, rng),
 		};
 
-		inputs.push((felts, class));
+		runner.run_one(class, || {
+			let _result = hash_squeeze_twice(&input);
+		});
 	}
+}
 
-	for (felts, class) in inputs {
+/// Test field element absorption with small inputs
+#[cfg(feature = "dudect-bencher")]
+fn test_field_absorption_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+	// Generate the fixed input once for all Left class samples
+	let fixed_input = generate_fixed_byte_input(SMALL_INPUT_SIZE);
+
+	for _ in 0..100_000 {
+		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
+		let input = match class {
+			Class::Left => fixed_input.clone(),
+			Class::Right => generate_random_byte_input(SMALL_INPUT_SIZE, rng),
+		};
+
+		runner.run_one(class, || {
+			let _felts: Vec<Goldilocks> = injective_bytes_to_felts(&input);
+		});
+	}
+}
+
+/// Test field element absorption with medium inputs
+#[cfg(feature = "dudect-bencher")]
+fn test_field_absorption_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+	// Generate the fixed input once for all Left class samples
+	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE);
+
+	for _ in 0..100_000 {
+		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
+		let input = match class {
+			Class::Left => fixed_input.clone(),
+			Class::Right => generate_random_byte_input(MEDIUM_INPUT_SIZE, rng),
+		};
+
+		runner.run_one(class, || {
+			let _felts: Vec<Goldilocks> = injective_bytes_to_felts(&input);
+		});
+	}
+}
+
+/// Test double hashing with small field element inputs
+#[cfg(feature = "dudect-bencher")]
+fn test_double_hash_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+	// Generate the fixed input once for all Left class samples
+	let fixed_felts = generate_fixed_felt_input(SMALL_FELT_COUNT);
+
+	for _ in 0..100_000 {
+		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
+		let felts = match class {
+			Class::Left => fixed_felts.clone(),
+			Class::Right => generate_random_felt_input(SMALL_FELT_COUNT, rng),
+		};
+
 		runner.run_one(class, || {
 			let _result = double_hash_variable_length(felts.clone());
 		});
 	}
 }
 
-/// Test edge cases: different single bytes should be constant time
+/// Test double hashing with medium field element inputs
 #[cfg(feature = "dudect-bencher")]
-fn test_edge_cases_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
-	let mut inputs: Vec<(Vec<u8>, Class)> = Vec::new();
+fn test_double_hash_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+	// Generate the fixed input once for all Left class samples
+	let fixed_felts = generate_fixed_felt_input(MEDIUM_FELT_COUNT);
 
-	// Generate test inputs
 	for _ in 0..100_000 {
-		let byte1 = rng.next_u32() as u8;
-		let mut byte2 = rng.next_u32() as u8;
-
-		// Ensure different
-		if byte1 == byte2 {
-			byte2 = byte2.wrapping_add(1);
-		}
-
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
-		let byte_vec = match class {
-			Class::Left => vec![byte1],
-			Class::Right => vec![byte2],
+		let felts = match class {
+			Class::Left => fixed_felts.clone(),
+			Class::Right => generate_random_felt_input(MEDIUM_FELT_COUNT, rng),
 		};
 
-		inputs.push((byte_vec, class));
+		runner.run_one(class, || {
+			let _result = double_hash_variable_length(felts.clone());
+		});
 	}
+}
 
-	for (input, class) in inputs {
+/// Test hash_variable_length with small field element inputs
+#[cfg(feature = "dudect-bencher")]
+fn test_hash_variable_length_felts_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+	// Generate the fixed input once for all Left class samples
+	let fixed_felts = generate_fixed_felt_input(SMALL_FELT_COUNT);
+
+	for _ in 0..100_000 {
+		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
+		let felts = match class {
+			Class::Left => fixed_felts.clone(),
+			Class::Right => generate_random_felt_input(SMALL_FELT_COUNT, rng),
+		};
+
+		runner.run_one(class, || {
+			let _result = hash_variable_length(felts.clone());
+		});
+	}
+}
+
+/// Test hash_variable_length with medium field element inputs
+#[cfg(feature = "dudect-bencher")]
+fn test_hash_variable_length_felts_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+	// Generate the fixed input once for all Left class samples
+	let fixed_felts = generate_fixed_felt_input(MEDIUM_FELT_COUNT);
+
+	for _ in 0..100_000 {
+		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
+		let felts = match class {
+			Class::Left => fixed_felts.clone(),
+			Class::Right => generate_random_felt_input(MEDIUM_FELT_COUNT, rng),
+		};
+
+		runner.run_one(class, || {
+			let _result = hash_variable_length(felts.clone());
+		});
+	}
+}
+
+/// Test hash_variable_length with large field element inputs
+#[cfg(feature = "dudect-bencher")]
+fn test_hash_variable_length_felts_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+	// Generate the fixed input once for all Left class samples
+	let fixed_felts = generate_fixed_felt_input(LARGE_FELT_COUNT);
+
+	for _ in 0..50_000 {
+		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
+		let felts = match class {
+			Class::Left => fixed_felts.clone(),
+			Class::Right => generate_random_felt_input(LARGE_FELT_COUNT, rng),
+		};
+
+		runner.run_one(class, || {
+			let _result = hash_variable_length(felts.clone());
+		});
+	}
+}
+
+/// Test double hashing with large field element inputs
+#[cfg(feature = "dudect-bencher")]
+fn test_double_hash_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+	// Generate the fixed input once for all Left class samples
+	let fixed_felts = generate_fixed_felt_input(LARGE_FELT_COUNT);
+
+	for _ in 0..50_000 {
+		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
+		let felts = match class {
+			Class::Left => fixed_felts.clone(),
+			Class::Right => generate_random_felt_input(LARGE_FELT_COUNT, rng),
+		};
+
+		runner.run_one(class, || {
+			let _result = double_hash_variable_length(felts.clone());
+		});
+	}
+}
+
+/// Test single byte edge cases with fixed vs random patterns
+#[cfg(feature = "dudect-bencher")]
+fn test_single_byte_edge_cases_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+	// Generate the fixed input once for all Left class samples
+	let fixed_input = vec![0xFFu8];
+
+	for _ in 0..100_000 {
+		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
+		let input = match class {
+			Class::Left => fixed_input.clone(),
+			Class::Right => {
+				let random_byte = rng.next_u32() as u8;
+				vec![random_byte]
+			}
+		};
+
 		runner.run_one(class, || {
 			let _result = hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
 		});
 	}
 }
 
-/// Integration test combining multiple operations
+/// Integration test with medium-sized inputs combining multiple operations
 #[cfg(feature = "dudect-bencher")]
 fn test_integrated_operations_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
-	let mut inputs: Vec<(Vec<u8>, Class)> = Vec::new();
+	// Generate the fixed input once for all Left class samples
+	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE);
 
-	// Generate test inputs with variable lengths
-	for _ in 0..50_000 {
-		// Fewer iterations since this does more work
-		// Use variable lengths between 32 and 5120 bytes (5KB)
-		let len1 = 32 + (rng.next_u32() % 5089) as usize; // 32-5120 bytes
-		let len2 = 32 + (rng.next_u32() % 5089) as usize; // 32-5120 bytes
-
-		let mut input1 = vec![0u8; len1];
-		let mut input2 = vec![0u8; len2];
-
-		rng.fill_bytes(&mut input1);
-		rng.fill_bytes(&mut input2);
-
-		// Ensure different inputs
-		input1[0] = 0xAA;
-		input2[0] = 0x55;
-
+	for _ in 0..25_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let input = match class {
-			Class::Left => input1,
-			Class::Right => input2,
+			Class::Left => fixed_input.clone(),
+			Class::Right => generate_random_byte_input(MEDIUM_INPUT_SIZE, rng),
 		};
 
-		inputs.push((input, class));
-	}
-
-	for (input, class) in inputs {
 		runner.run_one(class, || {
 			// Test a sequence of operations that might be used together
 			let _hash_padded = hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
@@ -311,51 +477,33 @@ fn test_integrated_operations_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	}
 }
 
-/// Test that variable length hashing is constant time for same-length inputs
-#[cfg(feature = "dudect-bencher")]
-fn test_hash_variable_length_felts_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
-	let mut inputs: Vec<(Vec<Goldilocks>, Class)> = Vec::new();
-
-	// Generate test inputs with variable lengths
-	for _ in 0..100_000 {
-		// Use variable lengths between 5 and 650 field elements (~5KB worth)
-		let len1 = 5 + (rng.next_u32() % 646) as usize; // 5-650 elements
-		let len2 = 5 + (rng.next_u32() % 646) as usize; // 5-650 elements
-
-		let mut felts1 = Vec::with_capacity(len1);
-		let mut felts2 = Vec::with_capacity(len2);
-
-		for _ in 0..len1 {
-			let val = rng.next_u64() % Goldilocks::ORDER_U64;
-			felts1.push(Goldilocks::from_int(val));
-		}
-
-		for _ in 0..len2 {
-			let val = rng.next_u64() % Goldilocks::ORDER_U64;
-			felts2.push(Goldilocks::from_int(val));
-		}
-
-		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
-		let felts = match class {
-			Class::Left => felts1,
-			Class::Right => felts2,
-		};
-
-		inputs.push((felts, class));
-	}
-
-	for (felts, class) in inputs {
-		runner.run_one(class, || {
-			let _result = hash_variable_length(felts.clone());
-		});
-	}
-}
-
 #[cfg(test)]
 mod tests {
 	use super::*;
 
-	// Simple unit tests to ensure functions compile and run
+	#[test]
+	fn test_input_generation_distinguishable() {
+		let mut rng = BenchRng::new();
+
+		// Test byte input generation
+		let fixed = generate_fixed_byte_input(32);
+		let random = generate_random_byte_input(32, &mut rng);
+		assert_eq!(fixed.len(), 32);
+		assert_eq!(random.len(), 32);
+
+		// Fixed should be all 0xFF
+		assert!(fixed.iter().all(|&b| b == 0xFF));
+
+		// Test felt input generation
+		let fixed_felts = generate_fixed_felt_input(8);
+		let random_felts = generate_random_felt_input(8, &mut rng);
+		assert_eq!(fixed_felts.len(), 8);
+		assert_eq!(random_felts.len(), 8);
+
+		// Fixed should be all ZERO
+		assert!(fixed_felts.iter().all(|&f| f == Goldilocks::ZERO));
+	}
+
 	#[test]
 	fn test_ct_functions_compile() {
 		// This test just ensures the hash functions compile and work
@@ -374,13 +522,33 @@ mod tests {
 // This creates a main function when compiled as a binary
 #[cfg(all(not(test), feature = "dudect-bencher"))]
 dudect_bencher::ctbench_main!(
-	test_hash_padded_bytes_ct,
-	test_hash_variable_length_bytes_ct,
+	// hash_padded_bytes tests for different input sizes
+	test_hash_padded_bytes_small_ct,
+	test_hash_padded_bytes_medium_ct,
+	test_hash_padded_bytes_large_ct,
+	test_hash_padded_bytes_xlarge_ct,
+	// hash_variable_length_bytes tests for different input sizes
+	test_hash_variable_length_bytes_small_ct,
+	test_hash_variable_length_bytes_medium_ct,
+	test_hash_variable_length_bytes_large_ct,
+	// Core permutation test
 	test_poseidon2_permutation_ct,
-	test_hash_squeeze_twice_ct,
-	test_field_absorption_ct,
-	test_double_hash_ct,
-	test_edge_cases_ct,
-	test_integrated_operations_ct,
-	test_hash_variable_length_felts_ct
+	// hash_squeeze_twice tests for different input sizes
+	test_hash_squeeze_twice_small_ct,
+	test_hash_squeeze_twice_medium_ct,
+	test_hash_squeeze_twice_large_ct,
+	// Field element absorption tests
+	test_field_absorption_small_ct,
+	test_field_absorption_medium_ct,
+	// Double hash tests for different felt counts
+	test_double_hash_small_ct,
+	test_double_hash_medium_ct,
+	test_double_hash_large_ct,
+	// hash_variable_length with felts for different sizes
+	test_hash_variable_length_felts_small_ct,
+	test_hash_variable_length_felts_medium_ct,
+	test_hash_variable_length_felts_large_ct,
+	// Edge cases and integration tests
+	test_single_byte_edge_cases_ct,
+	test_integrated_operations_ct
 );
