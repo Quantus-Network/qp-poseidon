@@ -18,7 +18,7 @@ use p3_goldilocks::Goldilocks;
 use qp_poseidon_core::{
 	double_hash_variable_length, hash_padded_bytes, hash_squeeze_twice, hash_variable_length,
 	hash_variable_length_bytes,
-	serialization::{unsafe_digest_bytes_to_felts, u128_to_felts, u64_to_felts},
+	serialization::{u128_to_felts, u64_to_felts, unsafe_digest_bytes_to_felts},
 };
 use scale_info::TypeInfo;
 use sp_core::{Hasher, H256};

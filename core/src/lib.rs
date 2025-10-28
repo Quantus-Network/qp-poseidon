@@ -3,7 +3,7 @@
 extern crate alloc;
 
 #[cfg(feature = "p3")]
-pub mod constants;
+pub use qp_poseidon_constants as constants;
 
 pub mod serialization;
 

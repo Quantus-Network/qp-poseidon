@@ -18,8 +18,8 @@ categories = ["cryptography", "no-std"]
 
 [dependencies]
 # Common (no_std-friendly; we seed ChaCha from a fixed value)
-rand.workspace = true
 rand_chacha.workspace = true
+qp-poseidon-constants.workspace = true
 
 
 # Plonky3 stack
@@ -50,10 +50,6 @@ p3 = [
 	"dep:p3-symmetric",
 ]
 p2 = ["dep:qp-plonky2"]
-
-[[bin]]
-name = "extract_constants"
-path = "build_helpers/extract_constants.rs"
 
 [[bin]]
 name = "ct_bench"
