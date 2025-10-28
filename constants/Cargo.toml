@@ -12,10 +12,10 @@ keywords = [
 	"cryptography",
 	"hash-functions",
 	"poseidon",
+    "no-std",
 	"quantus-network",
-	"substrate",
 ]
-categories = ["cryptography"]
+categories = ["cryptography", "no-std"]
 
 [dependencies]
 p3-goldilocks = { workspace = true }
@@ -29,6 +29,7 @@ p3-symmetric = { workspace = true }
 
 [features]
 default = []
+std = []
 
 [[bin]]
 name = "extract_constants"

@@ -39,9 +39,9 @@ hex.workspace = true
 criterion.workspace = true
 
 [features]
-# Keep no_std by default; choose Plonky3 as the default backend to preserve current behavior.
+# Keep no_std by default; set Plonky3 as the default backend
 default = ["p3"]
-std = [] # forward-compatible if you later want std-only niceties
+std = []
 ct-testing = ["dudect-bencher", "std"] # Enable constant-time testing features
 p3 = [
 	"dep:p3-field",
