@@ -1,6 +1,6 @@
 # qp-poseidon-core
 
-A pure Rust implementation of the Poseidon hash function using plonky3 field arithmetic. This crate provides the core cryptographic functionality without any external dependencies beyond plonky3.
+A pure Rust implementation of the Poseidon hash function using plonky3 field arithmetic. This crate provides the core cryptographic functionality without any external dependencies beyond plonky3. 
 
 ## Features
 
