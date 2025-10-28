@@ -1,3 +1,4 @@
+#![no_std]
 // Auto-generated Poseidon2 constants for WIDTH=12
 // Generated with seed: 0x3141592653589793
 // External rounds: 8, Internal rounds: 22

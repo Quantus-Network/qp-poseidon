@@ -11,8 +11,8 @@ description = "Precomputed Poseidon2 constants for Goldilocks field"
 keywords = [
 	"cryptography",
 	"hash-functions",
+	"no-std",
 	"poseidon",
-    "no-std",
 	"quantus-network",
 ]
 categories = ["cryptography", "no-std"]
