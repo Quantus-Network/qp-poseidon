@@ -13,12 +13,10 @@
 use dudect_bencher::rand::{Rng, RngCore};
 #[cfg(feature = "dudect-bencher")]
 use dudect_bencher::{BenchRng, Class, CtRunner};
-use p3_field::integers::QuotientMap;
-use p3_field::{PrimeCharacteristicRing, PrimeField64};
+use p3_field::{integers::QuotientMap, PrimeCharacteristicRing, PrimeField64};
 use p3_goldilocks::Goldilocks;
 use p3_symmetric::Permutation;
-use qp_poseidon_core::serialization::injective_bytes_to_felts;
-use qp_poseidon_core::*;
+use qp_poseidon_core::{serialization::injective_bytes_to_felts, *};
 
 const FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 189;
 
@@ -427,7 +425,7 @@ fn test_double_hash_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 
 		// Disrupt cache state before each sample
 		disrupt_cache(rng);
-		
+
 		runner.run_one(class, || {
 			let _result = double_hash_variable_length(felts.clone());
 		});
