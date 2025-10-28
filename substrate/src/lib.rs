@@ -18,7 +18,7 @@ use p3_goldilocks::Goldilocks;
 use qp_poseidon_core::{
 	double_hash_variable_length, hash_padded_bytes, hash_squeeze_twice, hash_variable_length,
 	hash_variable_length_bytes,
-	serialization::{digest_bytes_to_felts, u128_to_felts, u64_to_felts},
+	serialization::{unsafe_digest_bytes_to_felts, u128_to_felts, u64_to_felts},
 };
 use scale_info::TypeInfo;
 use sp_core::{Hasher, H256};
@@ -104,10 +104,10 @@ impl PoseidonHasher {
 		let (transfer_count, from_account, to_account, amount): (u64, AccountId, AccountId, u128) =
 			Decode::decode(&mut y).expect("already asserted input length. qed");
 		felts.extend(u64_to_felts::<Goldilocks>(transfer_count));
-		felts.extend(digest_bytes_to_felts::<Goldilocks>(
+		felts.extend(unsafe_digest_bytes_to_felts::<Goldilocks>(
 			&from_account.encode().try_into().expect("AccountId expected to equal 32 bytes"),
 		));
-		felts.extend(digest_bytes_to_felts::<Goldilocks>(
+		felts.extend(unsafe_digest_bytes_to_felts::<Goldilocks>(
 			&to_account.encode().try_into().expect("AccountId expected to equal 32 bytes"),
 		));
 		felts.extend(u128_to_felts::<Goldilocks>(amount));

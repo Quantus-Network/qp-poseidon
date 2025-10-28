@@ -186,7 +186,7 @@ pub fn hash_squeeze_twice(x: &[u8]) -> [u8; 64] {
 
 #[cfg(test)]
 mod tests {
-	use crate::serialization::digest_bytes_to_felts;
+	use crate::serialization::unsafe_digest_bytes_to_felts;
 
 	use super::*;
 	use alloc::vec;
@@ -454,7 +454,7 @@ mod tests {
 
 		// Double hash should equal hashing the first hash with the hash_variable_length function
 		let recomputed_double_hash =
-			hash_variable_length(digest_bytes_to_felts(&first_hash).to_vec());
+			hash_variable_length(unsafe_digest_bytes_to_felts(&first_hash).to_vec());
 		assert_eq!(double_hash, recomputed_double_hash);
 	}
 }

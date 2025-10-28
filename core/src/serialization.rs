@@ -146,7 +146,7 @@ pub fn injective_bytes_to_felts<G: GoldiCompat>(input: &[u8]) -> Vec<G> {
 }
 
 /// 8 bytes → 1 felt, for digest paths ONLY. Assumes bytes fit within field order.
-pub fn digest_bytes_to_felts<G: GoldiCompat>(input: &BytesDigest) -> [G; OUTPUT] {
+pub fn unsafe_digest_bytes_to_felts<G: GoldiCompat>(input: &BytesDigest) -> [G; OUTPUT] {
 	const BYTES_PER_ELEMENT: usize = 8;
 	let mut out = [G::from_u64(0); OUTPUT];
 
@@ -227,7 +227,7 @@ mod tests {
 	use super::*;
 	use crate::Goldilocks;
 	use alloc::{format, string::String, vec};
-	use p3_field::{integers::QuotientMap, PrimeField64};
+	use p3_field::integers::QuotientMap;
 
 	#[test]
 	fn test_u64_round_trip() {
@@ -342,7 +342,7 @@ mod tests {
 		}];
 
 		for original in test_cases {
-			let felts = digest_bytes_to_felts::<Goldilocks>(&original);
+			let felts = unsafe_digest_bytes_to_felts::<Goldilocks>(&original);
 			let reconstructed = digest_felts_to_bytes(&[felts[0], felts[1], felts[2], felts[3]]);
 			assert_eq!(
 				original, reconstructed,
