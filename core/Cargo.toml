@@ -42,7 +42,7 @@ criterion.workspace = true
 # Keep no_std by default; choose Plonky3 as the default backend to preserve current behavior.
 default = ["p3"]
 std = [] # forward-compatible if you later want std-only niceties
-ct-testing = ["std", "dudect-bencher"] # Enable constant-time testing features
+ct-testing = ["dudect-bencher", "std"] # Enable constant-time testing features
 p3 = [
 	"dep:p3-field",
 	"dep:p3-goldilocks",
@@ -58,8 +58,6 @@ path = "build_helpers/extract_constants.rs"
 [[bin]]
 name = "ct_bench"
 required-features = ["ct-testing"]
-
-
 
 
 [[bench]]
