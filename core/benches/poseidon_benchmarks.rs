@@ -2,8 +2,8 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use p3_field::integers::QuotientMap;
 use p3_goldilocks::Goldilocks;
 use qp_poseidon_core::{
-	hash_padded_bytes, hash_squeeze_twice, hash_variable_length, hash_variable_length_bytes,
-	poseidon2_from_seed, serialization::injective_bytes_to_felts,
+	constants::create_poseidon, hash_padded_bytes, hash_squeeze_twice, hash_variable_length,
+	hash_variable_length_bytes, poseidon2_from_seed, serialization::injective_bytes_to_felts,
 };
 
 /// Generate test data of varying sizes for benchmarking
@@ -149,6 +149,13 @@ fn bench_initialization(c: &mut Criterion) {
 	group.bench_function("new_with_seed", |b| {
 		b.iter(|| {
 			let hasher = poseidon2_from_seed(black_box(12345));
+			black_box(hasher)
+		})
+	});
+
+	group.bench_function("create_poseidon", |b| {
+		b.iter(|| {
+			let hasher = create_poseidon();
 			black_box(hasher)
 		})
 	});
