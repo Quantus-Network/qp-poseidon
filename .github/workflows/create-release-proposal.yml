@@ -149,9 +149,12 @@ jobs:
           
           # Update qp-poseidon-core version in workspace.dependencies
           sed -i -E "s/(qp-poseidon-core\s*=\s*\{[^}]*version\s*=\s*\")[^\"]+(\")[^}]*\}/\1$new_cargo_version\2, default-features = false }/g" Cargo.toml
+          
+          # Update qp-poseidon-constants version in workspace.dependencies
+          sed -i -E "s/(qp-poseidon-constants\s*=\s*\{[^}]*version\s*=\s*\")[^\"]+(\")[^}]*\}/\1$new_cargo_version\2, default-features = false }/g" Cargo.toml
 
-          # Update Cargo.lock for both packages
-          cargo update --package qp-poseidon-core --package qp-poseidon
+          # Update Cargo.lock for all workspace packages
+          cargo update --package qp-poseidon-core --package qp-poseidon-constants --package qp-poseidon
 
           # Commit changes
           git config user.name "${{ github.actor }}"
