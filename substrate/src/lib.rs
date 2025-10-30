@@ -15,7 +15,11 @@ use core::{
 	prelude::rust_2024::derive,
 };
 use p3_goldilocks::Goldilocks;
-use qp_poseidon_core::{digest_bytes_to_felts, u128_to_felts, u64_to_felts, Poseidon2Core};
+use qp_poseidon_core::{
+	double_hash_variable_length, hash_padded_bytes, hash_squeeze_twice, hash_variable_length,
+	hash_variable_length_bytes,
+	serialization::{u128_to_felts, u64_to_felts, unsafe_digest_bytes_to_felts},
+};
 use scale_info::TypeInfo;
 use sp_core::{Hasher, H256};
 use sp_storage::StateVersion;
@@ -26,8 +30,8 @@ use serde::{Deserialize, Serialize};
 
 // Re-export core functionality for convenience
 pub use qp_poseidon_core::{
-	digest_felts_to_bytes, injective_bytes_to_felts, injective_felts_to_bytes,
-	injective_string_to_felts, MIN_FIELD_ELEMENT_PREIMAGE_LEN,
+	serialization::{injective_bytes_to_felts, injective_string_to_felts},
+	FIELD_ELEMENT_PREIMAGE_PADDING_LEN,
 };
 
 /// A standard library hasher implementation using Poseidon
@@ -61,34 +65,23 @@ impl Hasher for PoseidonHasher {
 }
 
 impl PoseidonHasher {
-	/// Hash field elements with padding to ensure consistent circuit behavior
-	pub fn hash_padded_felts(x: Vec<Goldilocks>) -> [u8; 32] {
-		let hasher = Poseidon2Core::new();
-		hasher.hash_padded_felts(x)
-	}
-
 	/// Hash bytes with padding to ensure consistent circuit behavior
 	pub fn hash_padded(x: &[u8]) -> [u8; 32] {
-		let hasher = Poseidon2Core::new();
-		hasher.hash_padded(x)
+		hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(x)
 	}
 
 	/// Hash field elements without any padding
-	pub fn hash_no_pad(x: Vec<Goldilocks>) -> [u8; 32] {
-		let hasher = Poseidon2Core::new();
-		hasher.hash_no_pad(x)
+	pub fn hash_variable_length(x: Vec<Goldilocks>) -> [u8; 32] {
+		hash_variable_length(x)
+	}
+
+	pub fn hash_variable_length_bytes(x: &[u8]) -> [u8; 32] {
+		hash_variable_length_bytes(x)
 	}
 
 	/// Hash with 512-bit output by hashing input, then hashing the result, and concatenating both
-	pub fn hash_512(x: &[u8]) -> [u8; 64] {
-		let hasher = Poseidon2Core::new();
-		hasher.hash_512(x)
-	}
-
-	/// Hash field elements with 512-bit output
-	pub fn hash_512_felts(x: Vec<Goldilocks>) -> [u8; 64] {
-		let hasher = Poseidon2Core::new();
-		hasher.hash_512_felts(x)
+	pub fn hash_squeeze_twice(x: &[u8]) -> [u8; 64] {
+		hash_squeeze_twice(x)
 	}
 
 	/// Hash storage data for Quantus transfer proofs
@@ -110,11 +103,19 @@ impl PoseidonHasher {
 		let mut y = x;
 		let (transfer_count, from_account, to_account, amount): (u64, AccountId, AccountId, u128) =
 			Decode::decode(&mut y).expect("already asserted input length. qed");
-		felts.extend(u64_to_felts(transfer_count));
-		felts.extend(digest_bytes_to_felts(&from_account.encode()));
-		felts.extend(digest_bytes_to_felts(&to_account.encode()));
-		felts.extend(u128_to_felts(amount));
-		PoseidonHasher::hash_no_pad(felts)
+		felts.extend(u64_to_felts::<Goldilocks>(transfer_count));
+		felts.extend(unsafe_digest_bytes_to_felts::<Goldilocks>(
+			&from_account.encode().try_into().expect("AccountId expected to equal 32 bytes"),
+		));
+		felts.extend(unsafe_digest_bytes_to_felts::<Goldilocks>(
+			&to_account.encode().try_into().expect("AccountId expected to equal 32 bytes"),
+		));
+		felts.extend(u128_to_felts::<Goldilocks>(amount));
+		hash_variable_length(felts)
+	}
+
+	pub fn double_hash_felts(felts: Vec<Goldilocks>) -> [u8; 32] {
+		double_hash_variable_length(felts)
 	}
 }
 
@@ -159,7 +160,7 @@ impl sp_runtime::traits::Hash for PoseidonHasher {
 mod tests {
 	use super::*;
 	use hex;
-	use p3_field::{integers::QuotientMap, PrimeField64};
+	use p3_field::PrimeField64;
 	use scale_info::prelude::vec;
 
 	#[cfg(feature = "std")]
@@ -175,8 +176,7 @@ mod tests {
 	fn test_substrate_wrapper_compatibility() {
 		// Test that the wrapper produces the same results as the core implementation
 		let input = b"test data";
-		let hasher = Poseidon2Core::new();
-		let core_hash = hasher.hash_padded(input);
+		let core_hash = hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(input);
 		let wrapper_hash = PoseidonHasher::hash_padded(input);
 		assert_eq!(core_hash, wrapper_hash);
 	}
@@ -295,31 +295,26 @@ mod tests {
 	#[test]
 	fn test_substrate_hash_512() {
 		let input = b"test substrate 512-bit";
-		let hash512 = PoseidonHasher::hash_512(input);
+		let hash512 = PoseidonHasher::hash_squeeze_twice(input);
 
 		// Should be exactly 64 bytes
 		assert_eq!(hash512.len(), 64);
 
 		// Should be deterministic
-		let hash512_2 = PoseidonHasher::hash_512(input);
+		let hash512_2 = PoseidonHasher::hash_squeeze_twice(input);
 		assert_eq!(hash512, hash512_2);
 
 		// First 32 bytes should match regular hash
-		let regular_hash = PoseidonHasher::hash_padded(input);
+		let regular_hash = PoseidonHasher::hash_variable_length_bytes(input);
 		assert_eq!(&hash512[0..32], &regular_hash);
 	}
 
 	#[test]
-	fn test_substrate_hash_512_felts() {
-		let felts =
-			vec![Goldilocks::from_int(111), Goldilocks::from_int(222), Goldilocks::from_int(333)];
-		let hash512 = PoseidonHasher::hash_512_felts(felts.clone());
-
-		// Should be exactly 64 bytes
-		assert_eq!(hash512.len(), 64);
-
-		// Should be deterministic
-		let hash512_2 = PoseidonHasher::hash_512_felts(felts);
-		assert_eq!(hash512, hash512_2);
+	fn test_double_hash() {
+		let preimage =
+			hex::decode("afd8e7530b95ee5ebab950c9a0c62fae1e80463687b3982233028e914f8ec7cc")
+				.unwrap();
+		let felts = injective_bytes_to_felts(&preimage);
+		let _hash = PoseidonHasher::double_hash_felts(felts);
 	}
 }

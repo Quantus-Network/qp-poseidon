@@ -43,7 +43,6 @@ println!("Hash: {:?}", hash);
 - Built on `qp-poseidon-core`'s security guarantees
 - Uses standard Substrate codec patterns
 - Specialized storage hashing prevents collision attacks
-- Extensive test coverage with known vectors
 
 ## Integration
 
