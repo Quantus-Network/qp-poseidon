@@ -336,7 +336,6 @@ mod tests {
 		}
 	}
 
-
 	#[test]
 	fn test_substrate_hash_512() {
 		let input = b"test substrate 512-bit";
