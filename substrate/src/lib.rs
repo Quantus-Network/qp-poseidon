@@ -293,6 +293,51 @@ mod tests {
 	}
 
 	#[test]
+	fn test_known_value_hashes() {
+		let vectors = [
+			(vec![], "89d1c547f1b828c8659fe0600c90d58e95b435d91d04439b67c83b88a679380a"),
+			(vec![0u8], "dbb29ba5d3bf3246356a8918dc2808ea5130a9ae02afefe360703afc848d3769"),
+			(vec![0u8, 0u8], "23b58c9f2aa60a1677e9bb360be87db2f48f52e8bd2702948f7f11b36cb1d607"),
+			(
+				vec![0u8, 0u8, 0u8],
+				"1799097faca4e7faa34fa7e17c2e16ae281a655cd502f6ef9f1c993d74f161d6",
+			),
+			(
+				vec![0u8, 0u8, 0u8, 0u8],
+				"5d1e9b2cdf43cce05de115f156dcf2062e3102341303613eeb1547886ebba4cc",
+			),
+			(
+				vec![0u8, 0u8, 0u8, 1u8],
+				"779f5f6d4ae11964fc2efd012bb691899ccc317ed9e186f9efdab73a2bf3af9e",
+			),
+			(
+				vec![1u8, 2, 3, 4, 5, 6, 7, 8],
+				"ecdf30787278c049402e704b298c30c7787116d75e4dbcd8ce6b5757ed8833e5",
+			),
+			(vec![255u8; 32], "fac64f5ed32acfa79a37cd5d1c4e48c67c500ae48043a61a95e51a2e181527ec"),
+			(
+				b"hello world".to_vec(),
+				"95d6a29c17bfd2149cda69c8becbc8cc33c527f39b3a2f7d12865272fd7f5677",
+			),
+			(
+				(0u8..32).collect::<Vec<u8>>(),
+				"66f2c7df65a0f456314999fcf95899e27a5a5436cb4f04d79f11f12f8f86f0e0`",
+			),
+		];
+
+		for (input, expected_hex) in vectors.iter() {
+			let hash = PoseidonHasher::hash_padded(input);
+			assert_eq!(
+				hex::encode(hash.as_slice()),
+				*expected_hex,
+				"input: 0x{}",
+				hex::encode(input)
+			);
+		}
+	}
+
+
+	#[test]
 	fn test_substrate_hash_512() {
 		let input = b"test substrate 512-bit";
 		let hash512 = PoseidonHasher::hash_squeeze_twice(input);
