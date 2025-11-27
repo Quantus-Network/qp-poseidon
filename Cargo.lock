@@ -2423,12 +2423,14 @@ dependencies = [
 [[package]]
 name = "plonky2_maybe_rayon"
 version = "1.0.0"
-source = "git+https://github.com/Quantus-Network/qp-plonky2#a7f257a234c40d252da33efdcd5f51f1f5a5b647"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e1e554181dc95243b8d9948ae7bae5759c7fb2502fed28f671f95ef38079406"
 
 [[package]]
 name = "plonky2_util"
 version = "1.0.0"
-source = "git+https://github.com/Quantus-Network/qp-plonky2#a7f257a234c40d252da33efdcd5f51f1f5a5b647"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c32c137808ca984ab2458b612b7eb0462d853ee041a3136e83d54b96074c7610"
 
 [[package]]
 name = "plotters"
@@ -2593,8 +2595,9 @@ dependencies = [
 
 [[package]]
 name = "qp-plonky2"
-version = "1.1.1"
-source = "git+https://github.com/Quantus-Network/qp-plonky2#a7f257a234c40d252da33efdcd5f51f1f5a5b647"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b141b5c3771bd05e23504a90d9632f208b19dbcbe722648a9a27b850c8371672"
 dependencies = [
  "ahash",
  "anyhow",
@@ -2619,8 +2622,9 @@ dependencies = [
 
 [[package]]
 name = "qp-plonky2-field"
-version = "1.1.1"
-source = "git+https://github.com/Quantus-Network/qp-plonky2#a7f257a234c40d252da33efdcd5f51f1f5a5b647"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a60d74769a0bc14c7d1226d325beec2379ae656681c61fce85daa041787ca69d"
 dependencies = [
  "anyhow",
  "itertools 0.11.0",
@@ -4171,7 +4175,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
