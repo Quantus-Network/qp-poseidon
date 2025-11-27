@@ -146,19 +146,9 @@ jobs:
           # Update workspace version in root Cargo.toml
           echo "Updating workspace version to: $new_cargo_version"
           sed -i -E "s/^version\s*=\s*\"[0-9a-zA-Z.-]+\"/version = \"$new_cargo_version\"/" Cargo.toml
-          
-          # Update qp-poseidon-core version in workspace.dependencies
-          sed -i -E "s/(qp-poseidon-core\s*=\s*\{[^}]*version\s*=\s*\")[^\"]+(\")[^}]*\}/\1$new_cargo_version\2, default-features = false }/g" Cargo.toml
-          
-          # Update qp-poseidon-constants version in workspace.dependencies
-          sed -i -E "s/(qp-poseidon-constants\s*=\s*\{[^}]*version\s*=\s*\")[^\"]+(\")[^}]*\}/\1$new_cargo_version\2, default-features = false }/g" Cargo.toml
 
-          # Update Cargo.lock for all workspace packages
-          # Use path specifications to avoid ambiguity with registry versions
-          cargo update \
-            --package "path+file://$(pwd)/core#qp-poseidon-core" \
-            --package "path+file://$(pwd)/constants#qp-poseidon-constants" \
-            --package qp-poseidon
+          # Update Cargo.lock for workspace packages (version updated via workspace.package)
+          cargo update --workspace
 
           # Commit changes
           git config user.name "${{ github.actor }}"
