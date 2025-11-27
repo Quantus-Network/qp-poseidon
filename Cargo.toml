@@ -28,8 +28,8 @@ p3-symmetric = { version = "0.3.0", default-features = false }
 qp-plonky2 = { version = "1.1.2", default-features = false, features = [
 	"no_random",
 ] }
-qp-poseidon-constants = { path = "./constants", default-features = false }
-qp-poseidon-core = { path = "./core", default-features = false }
+qp-poseidon-constants = { path = "./constants", version = "1.0.1", default-features = false }
+qp-poseidon-core = { path = "./core", version = "1.0.1", default-features = false }
 rand = { version = "0.9", default-features = false, features = ["small_rng"] }
 rand_chacha = { version = "0.9", default-features = false }
 scale-info = { version = "2.11.1", default-features = false, features = ["derive"] }
