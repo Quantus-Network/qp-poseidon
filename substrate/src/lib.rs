@@ -14,6 +14,7 @@ use core::{
 	iter::Extend,
 	prelude::rust_2024::derive,
 };
+use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::Goldilocks;
 use qp_poseidon_core::{
 	double_hash_variable_length, hash_padded_bytes, hash_squeeze_twice, hash_variable_length,
@@ -91,7 +92,8 @@ impl PoseidonHasher {
 		let max_encoded_len = u64::max_encoded_len() +
 			AccountId::max_encoded_len() +
 			AccountId::max_encoded_len() +
-			u128::max_encoded_len();
+			u128::max_encoded_len() +
+			u32::max_encoded_len();
 
 		debug_assert!(
 			x.len() == max_encoded_len,
@@ -101,8 +103,14 @@ impl PoseidonHasher {
 		);
 		let mut felts = Vec::with_capacity(max_encoded_len);
 		let mut y = x;
-		let (transfer_count, from_account, to_account, amount): (u64, AccountId, AccountId, u128) =
-			Decode::decode(&mut y).expect("already asserted input length. qed");
+		let (asset_id, transfer_count, from_account, to_account, amount): (
+			u32,
+			u64,
+			AccountId,
+			AccountId,
+			u128,
+		) = Decode::decode(&mut y).expect("already asserted input length. qed");
+		felts.push(Goldilocks::from_u32(asset_id));
 		felts.extend(u64_to_felts::<Goldilocks>(transfer_count));
 		felts.extend(unsafe_digest_bytes_to_felts::<Goldilocks>(
 			&from_account.encode().try_into().expect("AccountId expected to equal 32 bytes"),
