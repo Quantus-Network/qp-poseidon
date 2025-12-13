@@ -330,18 +330,13 @@ mod tests {
 	fn test_hash_storage() {
 		use sp_core::crypto::AccountId32;
 
-		let asset_id: u32 = 42;
-		let transfer_count: u64 = 7;
+		let asset_id = 42_u32;
+		let transfer_count = 7_u64;
 		let from_account = AccountId32::new([1u8; 32]);
 		let to_account = AccountId32::new([2u8; 32]);
-		let amount: u128 = 1_000_000;
+		let amount = 1_000_000_u128;
 
-		let mut encoded = Vec::new();
-		asset_id.encode_to(&mut encoded);
-		transfer_count.encode_to(&mut encoded);
-		from_account.encode_to(&mut encoded);
-		to_account.encode_to(&mut encoded);
-		amount.encode_to(&mut encoded);
+		let encoded = (asset_id, transfer_count, from_account, to_account, amount).encode();
 
 		let hash = PoseidonHasher::hash_storage::<AccountId32>(&encoded);
 		assert_eq!(hash.len(), 32);
