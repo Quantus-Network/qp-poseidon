@@ -325,4 +325,33 @@ mod tests {
 		let felts = injective_bytes_to_felts(&preimage);
 		let _hash = PoseidonHasher::double_hash_felts(felts);
 	}
+
+	#[test]
+	fn test_hash_storage() {
+		use sp_core::crypto::AccountId32;
+
+		let asset_id: u32 = 42;
+		let transfer_count: u64 = 7;
+		let from_account = AccountId32::new([1u8; 32]);
+		let to_account = AccountId32::new([2u8; 32]);
+		let amount: u128 = 1_000_000;
+
+		let mut encoded = Vec::new();
+		asset_id.encode_to(&mut encoded);
+		transfer_count.encode_to(&mut encoded);
+		from_account.encode_to(&mut encoded);
+		to_account.encode_to(&mut encoded);
+		amount.encode_to(&mut encoded);
+
+		let hash = PoseidonHasher::hash_storage::<AccountId32>(&encoded);
+		assert_eq!(hash.len(), 32);
+
+		// Should fail if the input length is incorrect
+		let invalid_encoded = &encoded[0..encoded.len() - 1];
+
+		let result = std::panic::catch_unwind(|| {
+			let _ = PoseidonHasher::hash_storage::<AccountId32>(invalid_encoded);
+		});
+		assert!(result.is_err(), "Expected panic due to invalid input length");
+	}
 }
