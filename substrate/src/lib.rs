@@ -3,17 +3,18 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use codec::{Decode, Encode, MaxEncodedLen};
+
+use codec::{Decode, Encode};
 use core::{
 	clone::Clone,
 	cmp::{Eq, PartialEq},
 	convert::TryInto,
-	debug_assert,
 	default::Default,
 	fmt::Debug,
 	iter::Extend,
 	prelude::rust_2024::derive,
 };
+
 use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::Goldilocks;
 use qp_poseidon_core::{
@@ -25,6 +26,99 @@ use scale_info::TypeInfo;
 use sp_core::{Hasher, H256};
 use sp_storage::StateVersion;
 use sp_trie::{LayoutV0, LayoutV1, TrieConfiguration};
+
+/// Converts types to Goldilocks field elements for Poseidon hashing.
+///
+/// Implementations must align with the circuit's expected layout for the given type.
+pub trait ToFelts {
+	/// Append felts to the buffer to minimize allocations
+	fn write_felts(&self, dest: &mut Vec<Goldilocks>);
+
+	/// Convenience method to convert to a vector of felts
+	fn to_felts(&self) -> Vec<Goldilocks> {
+		let mut vec = Vec::new();
+		self.write_felts(&mut vec);
+		vec
+	}
+}
+
+// Specific implementations for primitives and types used in the system.
+// We use specific implementations instead of a blanket `MaxEncodedLen` impl to allow
+// for structural composition of tuples via macros, which is required for correct circuit alignment.
+
+impl ToFelts for u32 {
+	fn write_felts(&self, dest: &mut Vec<Goldilocks>) {
+		dest.push(Goldilocks::from_u32(*self));
+	}
+}
+
+impl ToFelts for u64 {
+	fn write_felts(&self, dest: &mut Vec<Goldilocks>) {
+		dest.extend(u64_to_felts::<Goldilocks>(*self));
+	}
+}
+
+impl ToFelts for u128 {
+	fn write_felts(&self, dest: &mut Vec<Goldilocks>) {
+		dest.extend(u128_to_felts::<Goldilocks>(*self));
+	}
+}
+
+impl ToFelts for [u8; 32] {
+	fn write_felts(&self, dest: &mut Vec<Goldilocks>) {
+		dest.extend(unsafe_digest_bytes_to_felts::<Goldilocks>(self));
+	}
+}
+
+impl ToFelts for sp_core::crypto::AccountId32 {
+	fn write_felts(&self, dest: &mut Vec<Goldilocks>) {
+		dest.extend(unsafe_digest_bytes_to_felts::<Goldilocks>(self.as_ref()));
+	}
+}
+
+impl<T: ToFelts> ToFelts for Option<T> {
+	fn write_felts(&self, dest: &mut Vec<Goldilocks>) {
+		match self {
+			Some(v) => {
+				dest.push(Goldilocks::ONE);
+				v.write_felts(dest);
+			},
+			None => {
+				dest.push(Goldilocks::ZERO);
+			},
+		}
+	}
+}
+
+impl<T: ToFelts> ToFelts for Vec<T> {
+	fn write_felts(&self, dest: &mut Vec<Goldilocks>) {
+		// Length prefix + items
+		dest.push(Goldilocks::from_u32(self.len() as u32));
+		for item in self {
+			item.write_felts(dest);
+		}
+	}
+}
+
+// Macro to implement ToFelts for tuples
+macro_rules! impl_to_felts_tuple {
+	($($name:ident)+) => {
+		impl<$($name: ToFelts),+> ToFelts for ($($name,)+) {
+			fn write_felts(&self, dest: &mut Vec<Goldilocks>) {
+				#[allow(non_snake_case)]
+				let ($($name,)+) = self;
+				$($name.write_felts(dest);)+
+			}
+		}
+	}
+}
+
+impl_to_felts_tuple!(A);
+impl_to_felts_tuple!(A B);
+impl_to_felts_tuple!(A B C);
+impl_to_felts_tuple!(A B C D);
+impl_to_felts_tuple!(A B C D E);
+impl_to_felts_tuple!(A B C D E F);
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -85,40 +179,15 @@ impl PoseidonHasher {
 		hash_squeeze_twice(x)
 	}
 
-	/// Hash storage data for Quantus transfer proofs
-	/// This function should only be used to compute the quantus storage key for Transfer Proofs
-	/// It breaks up the bytes input in a specific way that mimics how our zk-circuit does it
-	pub fn hash_storage<AccountId: Decode + Encode + MaxEncodedLen>(x: &[u8]) -> [u8; 32] {
-		let max_encoded_len = u64::max_encoded_len() +
-			AccountId::max_encoded_len() +
-			AccountId::max_encoded_len() +
-			u128::max_encoded_len() +
-			u32::max_encoded_len();
+	/// Hash storage key or value.
+	///
+	/// Decodes the input bytes into `T` and converts to felts according to `ToFelts`.
+	/// This ensures the hash matches the circuit's expected preimage for type `T`.
+	pub fn hash_storage<T: Decode + ToFelts>(x: &[u8]) -> [u8; 32] {
+		let t = T::decode(&mut &x[..])
+			.expect("Input bytes length or format mismatch for the expected type");
 
-		debug_assert!(
-			x.len() == max_encoded_len,
-			"Input must be exactly {} bytes, but was {}",
-			max_encoded_len,
-			x.len()
-		);
-		let mut felts = Vec::with_capacity(max_encoded_len);
-		let mut y = x;
-		let (asset_id, transfer_count, from_account, to_account, amount): (
-			u32,
-			u64,
-			AccountId,
-			AccountId,
-			u128,
-		) = Decode::decode(&mut y).expect("already asserted input length. qed");
-		felts.push(Goldilocks::from_u32(asset_id));
-		felts.extend(u64_to_felts::<Goldilocks>(transfer_count));
-		felts.extend(unsafe_digest_bytes_to_felts::<Goldilocks>(
-			&from_account.encode().try_into().expect("AccountId expected to equal 32 bytes"),
-		));
-		felts.extend(unsafe_digest_bytes_to_felts::<Goldilocks>(
-			&to_account.encode().try_into().expect("AccountId expected to equal 32 bytes"),
-		));
-		felts.extend(u128_to_felts::<Goldilocks>(amount));
+		let felts = t.to_felts();
 		hash_variable_length(felts)
 	}
 
@@ -168,7 +237,6 @@ impl sp_runtime::traits::Hash for PoseidonHasher {
 mod tests {
 	use super::*;
 	use hex;
-	use p3_field::PrimeField64;
 	use scale_info::prelude::vec;
 
 	#[cfg(feature = "std")]
@@ -266,7 +334,7 @@ mod tests {
 	#[test]
 	fn test_big_preimage() {
 		for overflow in 1..=200 {
-			let preimage = (Goldilocks::ORDER_U64 + overflow).to_le_bytes();
+			let preimage = (18446744069414584321u64 + overflow).to_le_bytes();
 			let _hash = PoseidonHasher::hash_padded(&preimage);
 		}
 	}
@@ -336,17 +404,48 @@ mod tests {
 		let to_account = AccountId32::new([2u8; 32]);
 		let amount = 1_000_000_u128;
 
-		let encoded = (asset_id, transfer_count, from_account, to_account, amount).encode();
+		let encoded =
+			(asset_id, transfer_count, from_account.clone(), to_account.clone(), amount).encode();
 
-		let hash = PoseidonHasher::hash_storage::<AccountId32>(&encoded);
+		// The generic type T must match the structure of the encoded data
+		type TransferKey = (u32, u64, AccountId32, AccountId32, u128);
+
+		let hash = PoseidonHasher::hash_storage::<TransferKey>(&encoded);
 		assert_eq!(hash.len(), 32);
 
 		// Should fail if the input length is incorrect
 		let invalid_encoded = &encoded[0..encoded.len() - 1];
 
 		let result = std::panic::catch_unwind(|| {
-			let _ = PoseidonHasher::hash_storage::<AccountId32>(invalid_encoded);
+			let _ = PoseidonHasher::hash_storage::<TransferKey>(invalid_encoded);
 		});
 		assert!(result.is_err(), "Expected panic due to invalid input length");
+	}
+
+	#[test]
+	fn test_hash_storage_generic() {
+		// Test with simple u64
+		let val = 12345_u64;
+		let encoded = val.encode();
+		let hash = PoseidonHasher::hash_storage::<u64>(&encoded);
+		assert_eq!(hash.len(), 32);
+
+		// Test with tuple
+		let val_tuple = (1u32, 2u64);
+		let encoded_tuple = val_tuple.encode();
+		let hash_tuple = PoseidonHasher::hash_storage::<(u32, u64)>(&encoded_tuple);
+		assert_eq!(hash_tuple.len(), 32);
+
+		// Test with u32 (Specialized optimization)
+		let val_u32 = 12345_u32;
+		let encoded_u32 = val_u32.encode();
+		let hash_u32 = PoseidonHasher::hash_storage::<u32>(&encoded_u32);
+		assert_eq!(hash_u32.len(), 32);
+
+		// Test with Vec (Supported via explicit impl)
+		let val_vec = vec![1u32, 2u32, 3u32];
+		let encoded_vec = val_vec.encode();
+		let hash_vec = PoseidonHasher::hash_storage::<Vec<u32>>(&encoded_vec);
+		assert_eq!(hash_vec.len(), 32);
 	}
 }
