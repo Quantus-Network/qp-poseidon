@@ -20,7 +20,7 @@ use p3_goldilocks::Goldilocks;
 use qp_poseidon_core::{
 	double_hash_variable_length, hash_padded_bytes, hash_squeeze_twice, hash_variable_length,
 	hash_variable_length_bytes,
-	serialization::{u128_to_felts, u64_to_felts, unsafe_digest_bytes_to_felts},
+	serialization::{u128_to_quantized_felt, u64_to_felts, unsafe_digest_bytes_to_felts},
 };
 use scale_info::TypeInfo;
 use sp_core::{Hasher, H256};
@@ -57,10 +57,10 @@ impl ToFelts for u64 {
 		dest.extend(u64_to_felts::<Goldilocks>(*self));
 	}
 }
-
+/// Here we quantize u128 balance type to a u32 then to a single felt.
 impl ToFelts for u128 {
 	fn write_felts(&self, dest: &mut Vec<Goldilocks>) {
-		dest.extend(u128_to_felts::<Goldilocks>(*self));
+		dest.push(u128_to_quantized_felt::<Goldilocks>(*self));
 	}
 }
 
