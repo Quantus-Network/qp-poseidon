@@ -90,6 +90,12 @@ pub fn u128_to_felts<G: GoldiCompat>(num: u128) -> [G; FELTS_PER_U128] {
 pub fn u128_to_quantized_felt<G: GoldiCompat>(num: u128) -> G {
 	// Here we divide the u128 by 10^10 to go from 12 to 2 decimal places
 	let quantized = num / AMOUNT_QUANTIZATION_FACTOR;
+	// Ensure it fits within 32 bits
+	assert!(
+		quantized <= BIT_32_LIMB_MASK as u128,
+		"Quantized value {} exceeds 32-bit limb size",
+		quantized
+	); 
 	G::from_u64(quantized as u64)
 }
 
@@ -293,8 +299,8 @@ mod tests {
 			1_000_000_000_000u128,
 			1_230_000_000_000u128,   // 1.23e12
 			123_456_789_012_345u128, // 1.23456789012345e14
-			21_000_000_000_000_000_000u128, /* Max quantus supply of 21 million with 12 decimals
-			                          * of precision (should never exceed this value) */
+			21_000_000_000_000_000_000u128, /* Max quantus supply of 21 million with 12 decimals */
+			42_949_672_950_000_000_000u128, /* Maximum supply of any asset we can support, as this is the largest value that fits within a 32-bit limb with 2 decimals points of precision */
 		];
 
 		for &original in &test_values {
@@ -311,6 +317,43 @@ mod tests {
 				"u128 quantized round-trip failed for {}",
 				original
 			);
+		}
+	}
+
+	#[test]
+	#[should_panic(expected = "exceeds 32-bit limb size")]
+	fn test_u128_to_quantized_felt_panics_when_quantized_exceeds_32bit() {
+		let factor = AMOUNT_QUANTIZATION_FACTOR;
+		let just_over = (BIT_32_LIMB_MASK as u128 + 1) * factor; // quantized == mask+1
+		let _ = u128_to_quantized_felt::<Goldilocks>(just_over);
+	}
+
+	#[test]
+	fn test_u128_quantized_round_trip_precision_loss_examples() {
+		let f = AMOUNT_QUANTIZATION_FACTOR;
+
+		let cases = vec![
+			f - 1,                 // below one quantization unit -> rounds to 0
+			f + 1,                 // loses 1 unit
+			123 * f + 1,           // tiny remainder
+			123 * f + (f / 2),     // bigger remainder
+			123 * f + (f - 1),     // maximal remainder
+			(BIT_32_LIMB_MASK as u128) * f + (f - 1), // highest representable original with remainder
+		];
+
+		for original in cases {
+			let felt = u128_to_quantized_felt::<Goldilocks>(original);
+			let reconstructed =
+				try_felt_to_quantized_u128::<Goldilocks>(felt).expect("reconstruct");
+
+			let expected = original - (original % f);
+			assert_eq!(reconstructed, expected, "floor-to-quantization failed for {original}");
+
+			// Extra assertions to make the intent obvious:
+			assert!(reconstructed <= original);
+			if original % f != 0 {
+				assert_ne!(reconstructed, original, "expected precision loss for {original}");
+			}
 		}
 	}
 
