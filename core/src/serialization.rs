@@ -95,7 +95,7 @@ pub fn u128_to_quantized_felt<G: GoldiCompat>(num: u128) -> G {
 		quantized <= BIT_32_LIMB_MASK as u128,
 		"Quantized value {} exceeds 32-bit limb size",
 		quantized
-	); 
+	);
 	G::from_u64(quantized as u64)
 }
 
@@ -297,10 +297,12 @@ mod tests {
 		let test_values = vec![
 			0u128,
 			1_000_000_000_000u128,
-			1_230_000_000_000u128,   // 1.23e12
-			123_456_789_012_345u128, // 1.23456789012345e14
+			1_230_000_000_000u128,          // 1.23e12
+			123_456_789_012_345u128,        // 1.23456789012345e14
 			21_000_000_000_000_000_000u128, /* Max quantus supply of 21 million with 12 decimals */
-			42_949_672_950_000_000_000u128, /* Maximum supply of any asset we can support, as this is the largest value that fits within a 32-bit limb with 2 decimals points of precision */
+			42_949_672_950_000_000_000u128, /* Maximum supply of any asset we can support, as
+			                                 * this is the largest value that fits within a
+			                                 * 32-bit limb with 2 decimals points of precision */
 		];
 
 		for &original in &test_values {
@@ -333,12 +335,13 @@ mod tests {
 		let f = AMOUNT_QUANTIZATION_FACTOR;
 
 		let cases = vec![
-			f - 1,                 // below one quantization unit -> rounds to 0
-			f + 1,                 // loses 1 unit
-			123 * f + 1,           // tiny remainder
-			123 * f + (f / 2),     // bigger remainder
-			123 * f + (f - 1),     // maximal remainder
-			(BIT_32_LIMB_MASK as u128) * f + (f - 1), // highest representable original with remainder
+			f - 1,             // below one quantization unit -> rounds to 0
+			f + 1,             // loses 1 unit
+			123 * f + 1,       // tiny remainder
+			123 * f + (f / 2), // bigger remainder
+			123 * f + (f - 1), // maximal remainder
+			(BIT_32_LIMB_MASK as u128) * f + (f - 1), /* highest representable original with
+			                    * remainder */
 		];
 
 		for original in cases {

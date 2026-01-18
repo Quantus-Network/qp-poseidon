@@ -57,7 +57,8 @@ impl ToFelts for u64 {
 		dest.extend(u64_to_felts::<Goldilocks>(*self));
 	}
 }
-/// Here we quantize the u128 balance type to a u64 (constrained to 32-bit range) and then to a single felt.
+/// Here we quantize the u128 balance type to a u64 (constrained to 32-bit range) and then to a
+/// single felt.
 impl ToFelts for u128 {
 	fn write_felts(&self, dest: &mut Vec<Goldilocks>) {
 		dest.push(u128_to_quantized_felt::<Goldilocks>(*self));
