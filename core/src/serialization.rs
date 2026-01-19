@@ -65,6 +65,7 @@ pub mod p2_backend {
 pub const DIGEST_BYTES_PER_ELEMENT: usize = 8;
 pub const FELTS_PER_U128: usize = 4;
 pub const FELTS_PER_U64: usize = 2;
+pub const AMOUNT_QUANTIZATION_FACTOR: u128 = 10_000_000_000u128; // 10^10
 
 #[inline]
 fn as_32_bit_limb<G: GoldiCompat>(felt: G, index: usize) -> Result<u64, String> {
@@ -86,6 +87,18 @@ pub fn u128_to_felts<G: GoldiCompat>(num: u128) -> [G; FELTS_PER_U128] {
 	result
 }
 
+pub fn u128_to_quantized_felt<G: GoldiCompat>(num: u128) -> G {
+	// Here we divide the u128 by 10^10 to go from 12 to 2 decimal places
+	let quantized = num / AMOUNT_QUANTIZATION_FACTOR;
+	// Ensure it fits within 32 bits
+	assert!(
+		quantized <= BIT_32_LIMB_MASK as u128,
+		"Quantized value {} exceeds 32-bit limb size",
+		quantized
+	);
+	G::from_u64(quantized as u64)
+}
+
 pub fn u64_to_felts<G: GoldiCompat>(num: u64) -> [G; FELTS_PER_U64] {
 	[G::from_u64((num >> 32) & BIT_32_LIMB_MASK), G::from_u64(num & BIT_32_LIMB_MASK)]
 }
@@ -97,6 +110,11 @@ pub fn try_felts_to_u128<G: GoldiCompat>(felts: [G; FELTS_PER_U128]) -> Result<u
 		out |= (limb as u128) << (96 - 32 * i);
 	}
 	Ok(out)
+}
+
+pub fn try_felt_to_quantized_u128<G: GoldiCompat>(felt: G) -> Result<u128, String> {
+	let v = as_32_bit_limb(felt, 0)? as u128;
+	Ok(v * AMOUNT_QUANTIZATION_FACTOR)
 }
 
 pub fn try_felts_to_u64<G: GoldiCompat>(felts: [G; FELTS_PER_U64]) -> Result<u64, String> {
@@ -271,6 +289,74 @@ mod tests {
 				.expect(&format!("Failed to reconstruct u128 for input: {}", original));
 
 			assert_eq!(original, reconstructed, "u128 round-trip failed for {}", original);
+		}
+	}
+
+	#[test]
+	fn test_u128_quantized_round_trip() {
+		let test_values = vec![
+			0u128,
+			1_000_000_000_000u128,
+			1_230_000_000_000u128,          // 1.23e12
+			123_456_789_012_345u128,        // 1.23456789012345e14
+			21_000_000_000_000_000_000u128, /* Max quantus supply of 21 million with 12 decimals */
+			42_949_672_950_000_000_000u128, /* Maximum supply of any asset we can support, as
+			                                 * this is the largest value that fits within a
+			                                 * 32-bit limb with 2 decimals points of precision */
+		];
+
+		for &original in &test_values {
+			let quantized_felt = u128_to_quantized_felt::<Goldilocks>(original);
+
+			// Reconstruct the u128 from quantized felt
+			let reconstructed = try_felt_to_quantized_u128::<Goldilocks>(quantized_felt)
+				.expect(&format!("Failed to reconstruct quantized u128 for input: {}", original));
+
+			// Check that all significant digits match for precision of 2 decimal places
+			assert_eq!(
+				AMOUNT_QUANTIZATION_FACTOR * (original / AMOUNT_QUANTIZATION_FACTOR),
+				reconstructed,
+				"u128 quantized round-trip failed for {}",
+				original
+			);
+		}
+	}
+
+	#[test]
+	#[should_panic(expected = "exceeds 32-bit limb size")]
+	fn test_u128_to_quantized_felt_panics_when_quantized_exceeds_32bit() {
+		let factor = AMOUNT_QUANTIZATION_FACTOR;
+		let just_over = (BIT_32_LIMB_MASK as u128 + 1) * factor; // quantized == mask+1
+		let _ = u128_to_quantized_felt::<Goldilocks>(just_over);
+	}
+
+	#[test]
+	fn test_u128_quantized_round_trip_precision_loss_examples() {
+		let f = AMOUNT_QUANTIZATION_FACTOR;
+
+		let cases = vec![
+			f - 1,             // below one quantization unit -> rounds to 0
+			f + 1,             // loses 1 unit
+			123 * f + 1,       // tiny remainder
+			123 * f + (f / 2), // bigger remainder
+			123 * f + (f - 1), // maximal remainder
+			(BIT_32_LIMB_MASK as u128) * f + (f - 1), /* highest representable original with
+			                    * remainder */
+		];
+
+		for original in cases {
+			let felt = u128_to_quantized_felt::<Goldilocks>(original);
+			let reconstructed =
+				try_felt_to_quantized_u128::<Goldilocks>(felt).expect("reconstruct");
+
+			let expected = original - (original % f);
+			assert_eq!(reconstructed, expected, "floor-to-quantization failed for {original}");
+
+			// Extra assertions to make the intent obvious:
+			assert!(reconstructed <= original);
+			if original % f != 0 {
+				assert_ne!(reconstructed, original, "expected precision loss for {original}");
+			}
 		}
 	}
 
