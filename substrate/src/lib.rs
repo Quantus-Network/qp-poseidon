@@ -321,7 +321,7 @@ mod tests {
 			),
 			(
 				(0u8..32).collect::<Vec<u8>>(),
-				"66f2c7df65a0f456314999fcf95899e27a5a5436cb4f04d79f11f12f8f86f0e0`",
+				"66f2c7df65a0f456314999fcf95899e27a5a5436cb4f04d79f11f12f8f86f0e0",
 			),
 		];
 
