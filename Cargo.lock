@@ -2673,7 +2673,7 @@ dependencies = [
 
 [[package]]
 name = "qp-poseidon"
-version = "1.0.7"
+version = "1.1.0"
 dependencies = [
  "ctor",
  "env_logger",
@@ -2706,7 +2706,7 @@ dependencies = [
 
 [[package]]
 name = "qp-poseidon-core"
-version = "1.0.7"
+version = "1.1.0"
 dependencies = [
  "criterion",
  "dudect-bencher",
