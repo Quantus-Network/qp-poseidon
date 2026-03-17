@@ -6,6 +6,7 @@ extern crate alloc;
 pub use qp_poseidon_constants as constants;
 
 pub mod serialization;
+pub mod zktrie;
 
 use crate::serialization::{digest_felts_to_bytes, injective_bytes_to_felts};
 use alloc::vec::Vec;

@@ -21,6 +21,7 @@ use qp_poseidon_core::{
 	double_hash_variable_length, hash_padded_bytes, hash_squeeze_twice, hash_variable_length,
 	hash_variable_length_bytes,
 	serialization::{u128_to_quantized_felt, u64_to_felts, unsafe_digest_bytes_to_felts},
+	zktrie::try_hash_zktrie_node_hybrid,
 };
 use scale_info::TypeInfo;
 use sp_core::{Hasher, H256};
@@ -163,7 +164,8 @@ impl Hasher for PoseidonHasher {
 impl PoseidonHasher {
 	/// Hash bytes with padding to ensure consistent circuit behavior
 	pub fn hash_padded(x: &[u8]) -> [u8; 32] {
-		hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(x)
+		try_hash_zktrie_node_hybrid(x)
+			.unwrap_or_else(|| hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(x))
 	}
 
 	/// Hash field elements without any padding
