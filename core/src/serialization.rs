@@ -111,7 +111,7 @@ pub fn injective_bytes_to_felts(input: &[u8]) -> Vec<Goldilocks> {
 pub fn non_injective_bytes_to_felts(input: &[u8]) -> Vec<Goldilocks> {
 	const BYTES_PER_ELEMENT: usize = 8;
 
-	let padded_size = (input.len() + BYTES_PER_ELEMENT - 1) / BYTES_PER_ELEMENT * BYTES_PER_ELEMENT;
+	let padded_size = input.len().div_ceil(BYTES_PER_ELEMENT) * BYTES_PER_ELEMENT;
 	let num_elements = padded_size / BYTES_PER_ELEMENT;
 
 	let mut out = Vec::<Goldilocks>::with_capacity(num_elements);
