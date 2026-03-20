@@ -4,10 +4,14 @@ extern crate alloc;
 
 #[cfg(feature = "p3")]
 pub use qp_poseidon_constants as constants;
+// Re-export canonical sponge parameters
+pub use qp_poseidon_constants::{P2_RATE, P2_WIDTH};
 
 pub mod serialization;
 
-use crate::serialization::{digest_felts_to_bytes, injective_bytes_to_felts};
+use crate::serialization::{
+	digest_felts_to_bytes, injective_bytes_to_felts, non_injective_bytes_to_felts,
+};
 use alloc::vec::Vec;
 use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::{Goldilocks, Poseidon2Goldilocks};
@@ -15,12 +19,11 @@ use p3_symmetric::Permutation;
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
 /// The number of field elements to which inputs are padded in circuit-compatible hashing functions.
-pub const FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 189;
+pub const FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 80;
 
-// 4 felt output => 4 felt rate per round => capacity = 12 - 4 = 8
-// => 256 bits of classical preimage security => 128 bits security against Grover's algorithm
-const WIDTH: usize = 12;
-const RATE: usize = 4;
+// Use canonical values from qp-poseidon-constants
+const WIDTH: usize = P2_WIDTH;
+const RATE: usize = P2_RATE;
 const OUTPUT: usize = 4;
 
 // Bring the selected Goldilocks type in as `GF`
@@ -105,11 +108,11 @@ impl Poseidon2State {
 		}
 
 		let h1: [u8; 32] =
-			digest_felts_to_bytes(&self.state[..RATE].try_into().expect("RATE <= WIDTH"));
+			digest_felts_to_bytes(&self.state[..OUTPUT].try_into().expect("OUTPUT != 4"));
 		// second squeeze
 		self.poseidon2.permute_mut(&mut self.state);
 		let h2: [u8; 32] =
-			digest_felts_to_bytes(&self.state[..RATE].try_into().expect("RATE <= WIDTH"));
+			digest_felts_to_bytes(&self.state[..OUTPUT].try_into().expect("OUTPUT != 4"));
 
 		[h1, h2].concat().try_into().expect("64 bytes")
 	}
@@ -147,6 +150,19 @@ fn hash_circuit_padding_felts<const C: usize>(mut x: Vec<Goldilocks>) -> [u8; 32
 /// NOTE: Will panic if felt encoded input exceeds capacity of C
 pub fn hash_padded_bytes<const C: usize>(x: &[u8]) -> [u8; 32] {
 	hash_circuit_padding_felts::<C>(injective_bytes_to_felts(x))
+}
+
+/// Hash bytes with non-injective encoding and constant padding to size C.
+///
+/// Uses 8 bytes per felt (vs 4 for injective), so roughly half the field elements.
+/// NOT collision-resistant for arbitrary variable-length inputs. Safe to use for:
+/// - Self-describing structures (e.g., trie nodes with length-prefixed fields)
+/// - Fixed-length inputs
+/// - Inputs with external domain separation
+///
+/// NOTE: Will panic if felt encoded input exceeds capacity of C
+pub fn hash_padded_bytes_non_injective<const C: usize>(x: &[u8]) -> [u8; 32] {
+	hash_circuit_padding_felts::<C>(non_injective_bytes_to_felts(x))
 }
 
 /// Hash field elements without any padding

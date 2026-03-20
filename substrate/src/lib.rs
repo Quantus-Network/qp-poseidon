@@ -126,7 +126,10 @@ use serde::{Deserialize, Serialize};
 
 // Re-export core functionality for convenience
 pub use qp_poseidon_core::{
-	serialization::{injective_bytes_to_felts, injective_string_to_felts},
+	hash_padded_bytes_non_injective,
+	serialization::{
+		injective_bytes_to_felts, injective_string_to_felts, non_injective_bytes_to_felts,
+	},
 	FIELD_ELEMENT_PREIMAGE_PADDING_LEN,
 };
 
@@ -156,14 +159,26 @@ impl Hasher for PoseidonHasher {
 	const LENGTH: usize = 32;
 
 	fn hash(x: &[u8]) -> H256 {
-		H256::from_slice(&Self::hash_padded(x))
+		H256::from_slice(&Self::hash_padded_non_injective(x))
 	}
 }
 
 impl PoseidonHasher {
-	/// Hash bytes with padding to ensure consistent circuit behavior
+	/// Hash bytes with padding to ensure consistent circuit behavior.
+	/// Uses injective encoding (4 bytes per felt) - collision resistant for variable-length inputs.
 	pub fn hash_padded(x: &[u8]) -> [u8; 32] {
 		hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(x)
+	}
+
+	/// Hash bytes with non-injective encoding (8 bytes per felt) and padding.
+	///
+	/// More compact than `hash_padded` (~half the field elements), but NOT collision-resistant
+	/// for arbitrary variable-length inputs. Safe to use for:
+	/// - Self-describing structures (e.g., trie nodes with length-prefixed fields)
+	/// - Fixed-length inputs
+	/// - Inputs with external domain separation
+	pub fn hash_padded_non_injective(x: &[u8]) -> [u8; 32] {
+		hash_padded_bytes_non_injective::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(x)
 	}
 
 	/// Hash field elements without any padding
@@ -201,7 +216,7 @@ impl sp_runtime::traits::Hash for PoseidonHasher {
 	type Output = H256;
 
 	fn hash(s: &[u8]) -> Self::Output {
-		H256::from_slice(&Self::hash_padded(s))
+		H256::from_slice(&Self::hash_padded_non_injective(s))
 	}
 
 	/// Produce the hash of some codec-encodable value.

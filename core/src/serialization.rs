@@ -163,6 +163,44 @@ pub fn injective_bytes_to_felts<G: GoldiCompat>(input: &[u8]) -> Vec<G> {
 	out
 }
 
+/// Non-injective encoding: 8 bytes → 1 felt, zero-padded to 8-byte boundary.
+///
+/// Unlike `injective_bytes_to_felts`, this function does NOT add a length marker,
+/// so it is NOT collision-resistant for variable-length inputs on its own.
+/// It should only be used in contexts where:
+/// 1. The input length is fixed/known (e.g., trie nodes with known structure), OR
+/// 2. The hash is domain-separated by some other mechanism
+///
+/// This encoding is more compact: 8 bytes per felt vs 4 bytes for injective encoding.
+/// For a 256-byte input: non-injective = 32 felts, injective = 65 felts.
+pub fn non_injective_bytes_to_felts<G: GoldiCompat>(input: &[u8]) -> Vec<G> {
+	const BYTES_PER_ELEMENT: usize = 8;
+
+	// Calculate padded size (round up to 8-byte boundary)
+	let padded_size = (input.len() + BYTES_PER_ELEMENT - 1) / BYTES_PER_ELEMENT * BYTES_PER_ELEMENT;
+	let num_elements = padded_size / BYTES_PER_ELEMENT;
+
+	let mut out = Vec::<G>::with_capacity(num_elements);
+
+	// Process full 8-byte chunks
+	let full_chunks = input.len() / BYTES_PER_ELEMENT;
+	for i in 0..full_chunks {
+		let start = i * BYTES_PER_ELEMENT;
+		let bytes: [u8; 8] = input[start..start + BYTES_PER_ELEMENT].try_into().unwrap();
+		out.push(G::from_u64(u64::from_le_bytes(bytes)));
+	}
+
+	// Handle remaining bytes (if any) with zero-padding
+	let remaining = input.len() % BYTES_PER_ELEMENT;
+	if remaining > 0 {
+		let mut bytes = [0u8; BYTES_PER_ELEMENT];
+		bytes[..remaining].copy_from_slice(&input[full_chunks * BYTES_PER_ELEMENT..]);
+		out.push(G::from_u64(u64::from_le_bytes(bytes)));
+	}
+
+	out
+}
+
 /// 8 bytes → 1 felt, for digest paths ONLY. Assumes bytes fit within field order.
 pub fn unsafe_digest_bytes_to_felts<G: GoldiCompat>(input: &BytesDigest) -> [G; OUTPUT] {
 	const BYTES_PER_ELEMENT: usize = 8;
