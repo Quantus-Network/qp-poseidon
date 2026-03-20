@@ -2565,6 +2565,7 @@ dependencies = [
 [[package]]
 name = "qp-poseidon-constants"
 version = "1.0.3"
+source = "git+https://github.com/Quantus-Network/qp-poseidon-constants.git?branch=illuzen%2Fconsolidate-constants#57b4754d8e1f74f0470236098195e32e4639c6d6"
 dependencies = [
  "p3-field",
  "p3-goldilocks",
