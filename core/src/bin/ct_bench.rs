@@ -75,7 +75,8 @@ fn disrupt_cache(rng: &mut BenchRng) {
 	}
 
 	// Random access pattern to disrupt prefetcher
-	use rand::Rng;
+	#[cfg(feature = "dudect-bencher")]
+	use dudect_bencher::rand::Rng;
 	for _ in 0..100 {
 		let idx = rng.gen_range(0..dummy.len());
 		sum = sum.wrapping_add(dummy[idx] as u64);
@@ -248,7 +249,7 @@ fn test_hash_variable_length_bytes_large_ct(runner: &mut CtRunner, rng: &mut Ben
 /// Test the core Poseidon2 permutation with fixed state patterns
 #[cfg(feature = "dudect-bencher")]
 fn test_poseidon2_permutation_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
-	let poseidon = qp_poseidon_core::constants::create_poseidon();
+	let poseidon = qp_poseidon_constants::create_poseidon();
 
 	// Generate the fixed state once for all Left class samples
 	let fixed_value = Goldilocks::from_int(rng.next_u64() % Goldilocks::ORDER_U64);
