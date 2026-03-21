@@ -137,21 +137,15 @@ fn hash_circuit_padding_felts<const C: usize>(mut x: Vec<Goldilocks>) -> [u8; 32
 	hash_variable_length(x)
 }
 
-/// Hash bytes with constant padding to size C to ensure consistent circuit behavior
-/// NOTE: Will panic if felt encoded input exceeds capacity of C
+/// Hash bytes with constant padding to size C to ensure consistent circuit behavior.
+/// Pads to C elements if shorter; no padding if C or more elements.
 pub fn hash_padded_bytes<const C: usize>(x: &[u8]) -> [u8; 32] {
 	hash_circuit_padding_felts::<C>(injective_bytes_to_felts(x))
 }
 
 /// Hash bytes with non-injective encoding and constant padding to size C.
-///
-/// Uses 8 bytes per felt (vs 4 for injective), so roughly half the field elements.
-/// NOT collision-resistant for arbitrary variable-length inputs. Safe to use for:
-/// - Self-describing structures (e.g., trie nodes with length-prefixed fields)
-/// - Fixed-length inputs
-/// - Inputs with external domain separation
-///
-/// NOTE: Will panic if felt encoded input exceeds capacity of C
+/// Uses 8 bytes per felt (vs 4 for injective). Not collision-resistant for variable-length inputs.
+/// Pads to C elements if shorter; no padding if C or more elements.
 pub fn hash_padded_bytes_non_injective<const C: usize>(x: &[u8]) -> [u8; 32] {
 	hash_circuit_padding_felts::<C>(non_injective_bytes_to_felts(x))
 }

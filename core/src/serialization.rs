@@ -277,4 +277,153 @@ mod tests {
 			assert_eq!(reconstructed, expected);
 		}
 	}
+
+	#[test]
+	#[should_panic(expected = "exceeds 32-bit limb size")]
+	fn test_u128_to_quantized_felt_panics_when_quantized_exceeds_32bit() {
+		// When quantized value exceeds 32-bit, the function should panic
+		let just_over = (BIT_32_LIMB_MASK as u128 + 1) * AMOUNT_QUANTIZATION_FACTOR;
+		let _ = u128_to_quantized_felt(just_over);
+	}
+
+	#[test]
+	fn test_quantized_precision_loss_examples() {
+		// Verify that quantization properly floors to quantization units
+		let f = AMOUNT_QUANTIZATION_FACTOR;
+
+		let cases = vec![
+			(f - 1, 0),                   // below one unit -> rounds to 0
+			(f + 1, f),                   // loses 1 unit
+			(123 * f + 1, 123 * f),       // tiny remainder
+			(123 * f + (f / 2), 123 * f), // bigger remainder
+			(123 * f + (f - 1), 123 * f), // maximal remainder
+			((BIT_32_LIMB_MASK as u128) * f + (f - 1), (BIT_32_LIMB_MASK as u128) * f), // highest with remainder
+		];
+
+		for (original, expected) in cases {
+			let felt = u128_to_quantized_felt(original);
+			let reconstructed = try_felt_to_quantized_u128(felt).expect("reconstruct");
+			assert_eq!(reconstructed, expected, "floor-to-quantization failed for {original}");
+			assert!(reconstructed <= original);
+		}
+	}
+
+	#[test]
+	fn test_malformed_bytes_input_error_cases() {
+		// Test malformed felts that don't have proper terminator
+		let malformed_cases: Vec<Vec<Goldilocks>> = vec![
+			// No terminator at all - all non-terminator values
+			vec![Goldilocks::from_int(0x12345678_i64), Goldilocks::from_int(0x1ABCDEF0_i64)],
+			// Wrong terminator pattern - should be [1,0,0,0] not [2,0,0,0]
+			vec![
+				Goldilocks::from_int(0x12345678_i64),
+				Goldilocks::from_int(0x00000002_i64), // should be 1 followed by zeros
+			],
+			// All high values that don't form proper termination
+			vec![Goldilocks::from_int(0x7FFFFFFF_i64), Goldilocks::from_int(0x7FFFFFFF_i64)],
+		];
+
+		for malformed_felts in &malformed_cases {
+			let result = try_injective_felts_to_bytes(malformed_felts);
+			assert!(result.is_err(), "Malformed input should return error: {:?}", malformed_felts);
+		}
+	}
+
+	#[test]
+	fn test_felt_width_error_handling() {
+		// Create felts that exceed 32-bit limb size for u64 conversion
+		let invalid_felts =
+			[Goldilocks::from_int(0x1_0000_0000_i64), Goldilocks::from_int(0xFFFFFFFF_i64)];
+		let result = try_felts_to_u64(invalid_felts);
+		assert!(result.is_err(), "Expected felt width error for invalid felts");
+
+		// Create felts that exceed 32-bit limb size for u128 conversion
+		let invalid_felts_u128 = [
+			Goldilocks::from_int(0x1_0000_0000_i64),
+			Goldilocks::from_int(0x00000001_i64),
+			Goldilocks::from_int(0xFFFFFFFF_i64),
+			Goldilocks::from_int(0x00000001_i64),
+		];
+		let result = try_felts_to_u128(invalid_felts_u128);
+		assert!(result.is_err(), "Expected felt width error for invalid felts in u128");
+	}
+
+	// ==================== non_injective_bytes_to_felts tests ====================
+
+	#[test]
+	fn test_non_injective_encoding_basic() {
+		use p3_field::PrimeField64;
+		// Test basic encoding: 8 bytes -> 1 felt
+		let input = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+		let felts = non_injective_bytes_to_felts(&input);
+		assert_eq!(felts.len(), 1);
+
+		// Verify the encoding is little-endian u64
+		let expected = u64::from_le_bytes(input);
+		assert_eq!(felts[0].as_canonical_u64(), expected);
+	}
+
+	#[test]
+	fn test_non_injective_encoding_partial_block() {
+		use p3_field::PrimeField64;
+		// Test partial block: 5 bytes -> 1 felt (zero-padded)
+		let input = [0x01, 0x02, 0x03, 0x04, 0x05];
+		let felts = non_injective_bytes_to_felts(&input);
+		assert_eq!(felts.len(), 1);
+
+		// Should be zero-padded to 8 bytes
+		let mut padded = [0u8; 8];
+		padded[..5].copy_from_slice(&input);
+		let expected = u64::from_le_bytes(padded);
+		assert_eq!(felts[0].as_canonical_u64(), expected);
+	}
+
+	#[test]
+	fn test_non_injective_encoding_multiple_blocks() {
+		// 16 bytes -> 2 felts
+		let input: [u8; 16] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+		let felts = non_injective_bytes_to_felts(&input);
+		assert_eq!(felts.len(), 2);
+	}
+
+	#[test]
+	fn test_non_injective_encoding_empty() {
+		let input: [u8; 0] = [];
+		let felts = non_injective_bytes_to_felts(&input);
+		assert_eq!(felts.len(), 0);
+	}
+
+	#[test]
+	fn test_non_injective_known_collision() {
+		// Document the known collision behavior:
+		// Two different-length inputs that differ only in trailing zeros
+		// will produce the same encoding (this is expected and documented).
+		let input1 = [0x01, 0x02, 0x03];
+		let input2 = [0x01, 0x02, 0x03, 0x00, 0x00];
+
+		let felts1 = non_injective_bytes_to_felts(&input1);
+		let felts2 = non_injective_bytes_to_felts(&input2);
+
+		// Both produce the same felt because zero-padding is applied
+		assert_eq!(felts1, felts2, "Non-injective encoding should collide on trailing zeros");
+	}
+
+	#[test]
+	fn test_non_injective_vs_injective_size_comparison() {
+		// Non-injective uses 8 bytes per felt, injective uses 4 bytes per felt
+		// So non-injective should produce roughly half the felts
+		let input = [0u8; 32]; // 32 bytes
+
+		let injective_felts = injective_bytes_to_felts(&input);
+		let non_injective_felts = non_injective_bytes_to_felts(&input);
+
+		// Injective: 32 bytes + 1 terminator = 33 bytes -> ceil(33/4) = 9 felts
+		// Non-injective: 32 bytes -> ceil(32/8) = 4 felts
+		assert!(
+			non_injective_felts.len() < injective_felts.len(),
+			"Non-injective should produce fewer felts: {} vs {}",
+			non_injective_felts.len(),
+			injective_felts.len()
+		);
+	}
 }
