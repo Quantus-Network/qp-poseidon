@@ -107,7 +107,13 @@ pub fn injective_bytes_to_felts(input: &[u8]) -> Vec<Goldilocks> {
 }
 
 /// Non-injective encoding: 8 bytes -> 1 felt, zero-padded.
-/// NOT collision-resistant for variable-length inputs. Safe for self-describing structures.
+///
+/// NOT collision-resistant for variable-length inputs due to:
+/// 1. Zero-padding: `[0x01]` and `[0x01, 0, 0, 0, 0, 0, 0, 0]` encode identically
+/// 2. Modular reduction: u64 values >= 0xFFFFFFFF00000001 (Goldilocks order) collide
+///    with their reduction mod p (~2^32 such values exist)
+///
+/// Safe for self-describing structures (e.g., length-prefixed data, trie nodes).
 pub fn non_injective_bytes_to_felts(input: &[u8]) -> Vec<Goldilocks> {
 	const BYTES_PER_ELEMENT: usize = 8;
 
@@ -133,7 +139,11 @@ pub fn non_injective_bytes_to_felts(input: &[u8]) -> Vec<Goldilocks> {
 	out
 }
 
-/// Convert 32-byte digest to field elements. Assumes bytes fit within field order.
+/// Convert 32-byte digest to field elements.
+///
+/// "Unsafe" because u64 values >= 0xFFFFFFFF00000001 (Goldilocks order) are reduced mod p,
+/// creating non-injective mappings. Safe when input is a hash output (uniform distribution
+/// makes collisions negligible in practice).
 pub fn unsafe_digest_bytes_to_felts(input: &BytesDigest) -> [Goldilocks; POSEIDON2_OUTPUT] {
 	const BYTES_PER_ELEMENT: usize = 8;
 	let mut out = [from_u64(0); POSEIDON2_OUTPUT];
