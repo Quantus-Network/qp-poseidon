@@ -83,7 +83,9 @@ impl Poseidon2State {
 	fn finalize(self) -> [u8; 32] {
 		let state = self.finalize_state();
 		digest_felts_to_bytes(
-			&state[..POSEIDON2_OUTPUT].try_into().expect("POSEIDON2_OUTPUT finalize <= SPONGE_WIDTH"),
+			&state[..POSEIDON2_OUTPUT]
+				.try_into()
+				.expect("POSEIDON2_OUTPUT finalize <= SPONGE_WIDTH"),
 		)
 	}
 
@@ -97,12 +99,16 @@ impl Poseidon2State {
 		}
 
 		let h1: [u8; 32] = digest_felts_to_bytes(
-			&self.state[..POSEIDON2_OUTPUT].try_into().expect("POSEIDON2_OUTPUT <= SPONGE_WIDTH"),
+			&self.state[..POSEIDON2_OUTPUT]
+				.try_into()
+				.expect("POSEIDON2_OUTPUT <= SPONGE_WIDTH"),
 		);
 		// second squeeze
 		self.poseidon2.permute_mut(&mut self.state);
 		let h2: [u8; 32] = digest_felts_to_bytes(
-			&self.state[..POSEIDON2_OUTPUT].try_into().expect("POSEIDON2_OUTPUT second squeeze <= SPONGE_WIDTH"),
+			&self.state[..POSEIDON2_OUTPUT]
+				.try_into()
+				.expect("POSEIDON2_OUTPUT second squeeze <= SPONGE_WIDTH"),
 		);
 
 		[h1, h2].concat().try_into().expect("64 bytes")
