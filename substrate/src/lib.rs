@@ -18,9 +18,10 @@ use core::{
 use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::Goldilocks;
 use qp_poseidon_core::{
-	double_hash_variable_length, hash_padded_bytes, hash_squeeze_twice, hash_variable_length,
-	hash_variable_length_bytes,
-	serialization::{u128_to_quantized_felt, u64_to_felts},
+	double_hash_variable_length, hash_padded_bytes, hash_padded_bytes_non_injective,
+	hash_squeeze_twice, hash_variable_length, hash_variable_length_bytes,
+	serialization::{u128_to_quantized_felt, u64_to_felts, unsafe_digest_bytes_to_felts},
+	FIELD_ELEMENT_PREIMAGE_PADDING_LEN,
 };
 use scale_info::TypeInfo;
 use sp_core::{Hasher, H256};
@@ -123,16 +124,6 @@ impl_to_felts_tuple!(A B C D E F);
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-
-// Re-export core functionality for convenience
-pub use qp_poseidon_core::{
-	hash_padded_bytes_non_injective,
-	serialization::{
-		injective_bytes_to_felts, injective_string_to_felts, non_injective_bytes_to_felts,
-		safe_digest_bytes_to_felts, unsafe_digest_bytes_to_felts,
-	},
-	FIELD_ELEMENT_PREIMAGE_PADDING_LEN,
-};
 
 /// A standard library hasher implementation using Poseidon
 #[derive(Default)]
@@ -254,6 +245,7 @@ impl sp_runtime::traits::Hash for PoseidonHasher {
 mod tests {
 	use super::*;
 	use hex;
+	use qp_poseidon_core::serialization::injective_bytes_to_felts;
 	use scale_info::prelude::vec;
 
 	#[cfg(feature = "std")]
