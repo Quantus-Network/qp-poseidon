@@ -156,13 +156,41 @@ pub fn unsafe_digest_bytes_to_felts(input: &BytesDigest) -> [Goldilocks; POSEIDO
 	out
 }
 
-/// Convert field elements to 32-byte digest.
+/// Convert 32-byte digest to 8 field elements using safe 4-bytes-per-felt encoding.
+///
+/// Unlike `unsafe_digest_bytes_to_felts` (8 bytes/felt), this uses 4 bytes per felt,
+/// ensuring all values fit within u32 range with no modular reduction risk.
+/// Unlike `injective_bytes_to_felts`, this has no terminator since the length is fixed.
+pub fn safe_digest_bytes_to_felts(input: &BytesDigest) -> [Goldilocks; 8] {
+	const BYTES_PER_ELEMENT: usize = 4;
+	let mut out = [from_u64(0); 8];
+
+	for (i, chunk) in input.chunks(BYTES_PER_ELEMENT).enumerate() {
+		let mut bytes = [0u8; BYTES_PER_ELEMENT];
+		bytes[..chunk.len()].copy_from_slice(chunk);
+		out[i] = from_u64(u32::from_le_bytes(bytes) as u64);
+	}
+	out
+}
+
+/// Convert field elements to 32-byte digest (inverse of `unsafe_digest_bytes_to_felts`).
 pub fn digest_felts_to_bytes(input: &[Goldilocks; POSEIDON2_OUTPUT]) -> BytesDigest {
 	let mut bytes = [0u8; 32];
 	for (i, v) in input.iter().enumerate().take(POSEIDON2_OUTPUT) {
 		let start = i * 8;
 		let end = start + 8;
 		bytes[start..end].copy_from_slice(&to_u64(*v).to_le_bytes());
+	}
+	bytes
+}
+
+/// Convert 8 field elements to 32-byte digest (inverse of `safe_digest_bytes_to_felts`).
+pub fn safe_digest_felts_to_bytes(input: &[Goldilocks; 8]) -> BytesDigest {
+	let mut bytes = [0u8; 32];
+	for (i, v) in input.iter().enumerate() {
+		let start = i * 4;
+		let end = start + 4;
+		bytes[start..end].copy_from_slice(&(to_u64(*v) as u32).to_le_bytes());
 	}
 	bytes
 }

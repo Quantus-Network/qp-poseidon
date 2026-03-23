@@ -129,6 +129,7 @@ pub use qp_poseidon_core::{
 	hash_padded_bytes_non_injective,
 	serialization::{
 		injective_bytes_to_felts, injective_string_to_felts, non_injective_bytes_to_felts,
+		safe_digest_bytes_to_felts,
 	},
 	FIELD_ELEMENT_PREIMAGE_PADDING_LEN,
 };
