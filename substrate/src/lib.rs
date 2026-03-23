@@ -18,9 +18,10 @@ use core::{
 use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::Goldilocks;
 use qp_poseidon_core::{
-	double_hash_variable_length, hash_padded_bytes, hash_squeeze_twice, hash_variable_length,
-	hash_variable_length_bytes,
+	double_hash_variable_length, hash_padded_bytes, hash_padded_bytes_non_injective,
+	hash_squeeze_twice, hash_variable_length, hash_variable_length_bytes,
 	serialization::{u128_to_quantized_felt, u64_to_felts, unsafe_digest_bytes_to_felts},
+	FIELD_ELEMENT_PREIMAGE_PADDING_LEN,
 };
 use scale_info::TypeInfo;
 use sp_core::{Hasher, H256};
@@ -54,26 +55,26 @@ impl ToFelts for u32 {
 
 impl ToFelts for u64 {
 	fn write_felts(&self, dest: &mut Vec<Goldilocks>) {
-		dest.extend(u64_to_felts::<Goldilocks>(*self));
+		dest.extend(u64_to_felts(*self));
 	}
 }
 /// Here we quantize the u128 balance type to a u64 (constrained to 32-bit range) and then to a
 /// single felt.
 impl ToFelts for u128 {
 	fn write_felts(&self, dest: &mut Vec<Goldilocks>) {
-		dest.push(u128_to_quantized_felt::<Goldilocks>(*self));
+		dest.push(u128_to_quantized_felt(*self));
 	}
 }
 
 impl ToFelts for [u8; 32] {
 	fn write_felts(&self, dest: &mut Vec<Goldilocks>) {
-		dest.extend(unsafe_digest_bytes_to_felts::<Goldilocks>(self));
+		dest.extend(unsafe_digest_bytes_to_felts(self));
 	}
 }
 
 impl ToFelts for sp_core::crypto::AccountId32 {
 	fn write_felts(&self, dest: &mut Vec<Goldilocks>) {
-		dest.extend(unsafe_digest_bytes_to_felts::<Goldilocks>(self.as_ref()));
+		dest.extend(unsafe_digest_bytes_to_felts(self.as_ref()));
 	}
 }
 
@@ -124,12 +125,6 @@ impl_to_felts_tuple!(A B C D E F);
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-// Re-export core functionality for convenience
-pub use qp_poseidon_core::{
-	serialization::{injective_bytes_to_felts, injective_string_to_felts},
-	FIELD_ELEMENT_PREIMAGE_PADDING_LEN,
-};
-
 /// A standard library hasher implementation using Poseidon
 #[derive(Default)]
 pub struct PoseidonStdHasher(Vec<u8>);
@@ -156,14 +151,26 @@ impl Hasher for PoseidonHasher {
 	const LENGTH: usize = 32;
 
 	fn hash(x: &[u8]) -> H256 {
-		H256::from_slice(&Self::hash_padded(x))
+		H256::from_slice(&Self::hash_padded_non_injective(x))
 	}
 }
 
 impl PoseidonHasher {
-	/// Hash bytes with padding to ensure consistent circuit behavior
+	/// Hash bytes with padding to ensure consistent circuit behavior.
+	/// Uses injective encoding (4 bytes per felt) - collision resistant for variable-length inputs.
 	pub fn hash_padded(x: &[u8]) -> [u8; 32] {
 		hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(x)
+	}
+
+	/// Hash bytes with non-injective encoding (8 bytes per felt) and padding.
+	///
+	/// More compact than `hash_padded` (~half the field elements), but NOT collision-resistant
+	/// for arbitrary variable-length inputs. Safe to use for:
+	/// - Self-describing structures (e.g., trie nodes with length-prefixed fields)
+	/// - Fixed-length inputs
+	/// - Inputs with external domain separation
+	pub fn hash_padded_non_injective(x: &[u8]) -> [u8; 32] {
+		hash_padded_bytes_non_injective::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(x)
 	}
 
 	/// Hash field elements without any padding
@@ -201,7 +208,7 @@ impl sp_runtime::traits::Hash for PoseidonHasher {
 	type Output = H256;
 
 	fn hash(s: &[u8]) -> Self::Output {
-		H256::from_slice(&Self::hash_padded(s))
+		H256::from_slice(&Self::hash_padded_non_injective(s))
 	}
 
 	/// Produce the hash of some codec-encodable value.
@@ -238,6 +245,7 @@ impl sp_runtime::traits::Hash for PoseidonHasher {
 mod tests {
 	use super::*;
 	use hex;
+	use qp_poseidon_core::serialization::injective_bytes_to_felts;
 	use scale_info::prelude::vec;
 
 	#[cfg(feature = "std")]
@@ -372,33 +380,33 @@ mod tests {
 	#[test]
 	fn test_known_value_hashes() {
 		let vectors = [
-			(vec![], "89d1c547f1b828c8659fe0600c90d58e95b435d91d04439b67c83b88a679380a"),
-			(vec![0u8], "dbb29ba5d3bf3246356a8918dc2808ea5130a9ae02afefe360703afc848d3769"),
-			(vec![0u8, 0u8], "23b58c9f2aa60a1677e9bb360be87db2f48f52e8bd2702948f7f11b36cb1d607"),
+			(vec![], "55334d59983b44a3f2d665c2cc0deac520503820c2f250f5ab6edb037c73caea"),
+			(vec![0u8], "57c635f16d94de8936a4d0a0856501e1130e74a6fad0d588cd2b92e3b2006bae"),
+			(vec![0u8, 0u8], "2eb8c89584a5838e26263204f741981fd6fead53736991652c4896764266422e"),
 			(
 				vec![0u8, 0u8, 0u8],
-				"1799097faca4e7faa34fa7e17c2e16ae281a655cd502f6ef9f1c993d74f161d6",
+				"e7fc4ca465774d1aa97377c9c11af0e374d02cbe925a3fe5fd8c031db28c9b03",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8],
-				"5d1e9b2cdf43cce05de115f156dcf2062e3102341303613eeb1547886ebba4cc",
+				"479b6f46eb42ce8e6a8aecc552a2ee240a39d59c88cc9a8474c2b0b690303f66",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 1u8],
-				"779f5f6d4ae11964fc2efd012bb691899ccc317ed9e186f9efdab73a2bf3af9e",
+				"c157c163cf6e476ecc83bdb70e3d3cf7c33522ed649da75a77c0a63512f8325c",
 			),
 			(
 				vec![1u8, 2, 3, 4, 5, 6, 7, 8],
-				"ecdf30787278c049402e704b298c30c7787116d75e4dbcd8ce6b5757ed8833e5",
+				"4030ecfc78d7a57f683a73e39bebcb020b670cb72e55712b4159b34405e870a0",
 			),
-			(vec![255u8; 32], "fac64f5ed32acfa79a37cd5d1c4e48c67c500ae48043a61a95e51a2e181527ec"),
+			(vec![255u8; 32], "6e0e281ff27d6e0d7ec1f482cbe16183b962c7c4f6cbd624205bf8961effcb6c"),
 			(
 				b"hello world".to_vec(),
-				"95d6a29c17bfd2149cda69c8becbc8cc33c527f39b3a2f7d12865272fd7f5677",
+				"05fb9811b47254651831fee2d611b94c1d71e78bedb50fed479192096bef6608",
 			),
 			(
 				(0u8..32).collect::<Vec<u8>>(),
-				"66f2c7df65a0f456314999fcf95899e27a5a5436cb4f04d79f11f12f8f86f0e0",
+				"3b280392f79bf5d238d2835d94cc43a297bfd42b8f4a1563528009e52a1014d2",
 			),
 		];
 

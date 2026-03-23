@@ -39,7 +39,7 @@ default = ["std"]
 std = [
 	"codec/std",
 	"log/std",
-	"qp-poseidon-core/p3",
+	"qp-poseidon-core/std",
 	"scale-info/std",
 	"serde/std",
 	"sp-core/std",
