@@ -108,8 +108,8 @@ pub fn injective_bytes_to_felts(input: &[u8]) -> Vec<Goldilocks> {
 ///
 /// NOT collision-resistant for variable-length inputs due to:
 /// 1. Zero-padding: `[0x01]` and `[0x01, 0, 0, 0, 0, 0, 0, 0]` encode identically
-/// 2. Modular reduction: u64 values >= 0xFFFFFFFF00000001 (Goldilocks order) collide
-///    with their reduction mod p (~2^32 such values exist)
+/// 2. Modular reduction: u64 values >= 0xFFFFFFFF00000001 (Goldilocks order) collide with their
+///    reduction mod p (~2^32 such values exist)
 ///
 /// Safe for self-describing structures (e.g., length-prefixed data, trie nodes).
 pub fn non_injective_bytes_to_felts(input: &[u8]) -> Vec<Goldilocks> {
@@ -405,7 +405,7 @@ mod tests {
 			(123 * f + 1, 123 * f),       // tiny remainder
 			(123 * f + (f / 2), 123 * f), // bigger remainder
 			(123 * f + (f - 1), 123 * f), // maximal remainder
-			((BIT_32_LIMB_MASK as u128) * f + (f - 1), (BIT_32_LIMB_MASK as u128) * f), // highest with remainder
+			((BIT_32_LIMB_MASK as u128) * f + (f - 1), (BIT_32_LIMB_MASK as u128) * f), /* highest with remainder */
 		];
 
 		for (original, expected) in cases {
