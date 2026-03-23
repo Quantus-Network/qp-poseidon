@@ -148,13 +148,15 @@ jobs:
           echo "Updating workspace version to: $new_cargo_version"
           sed -i -E "s/^version\s*=\s*\"[0-9a-zA-Z.-]+\"/version = \"$new_cargo_version\"/" Cargo.toml
 
-          # Update qp-poseidon-core version in workspace.dependencies
-          sed -i -E "s/(qp-poseidon-core\s*=\s*\{[^}]*version\s*=\s*\")[^\"]+(\")[^}]*\}/\1$new_cargo_version\2, default-features = false }/g" Cargo.toml
+          # Update qp-poseidon-core version in workspace.dependencies (preserve path and other attributes)
+          # Match: qp-poseidon-core = { version = "X.Y.Z", ...rest... }
+          # Replace only the version number, keeping everything else intact
+          sed -i -E 's/(qp-poseidon-core = \{ version = ")[0-9]+\.[0-9]+\.[0-9]+(")/\1'"$new_cargo_version"'\2/' Cargo.toml
 
           # Update Cargo.lock for all workspace packages
-          # Use path specifications to avoid ambiguity with registry versions
+          # The path dependency in workspace.dependencies ensures local resolution
           cargo update \
-            --package "path+file://$(pwd)/core#qp-poseidon-core" \
+            --package qp-poseidon-core \
             --package qp-poseidon
 
           # Commit changes
