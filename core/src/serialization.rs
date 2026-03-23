@@ -280,7 +280,7 @@ pub fn try_injective_u64s_to_bytes(input: &[u64]) -> Result<Vec<u8>, &'static st
 /// makes collisions negligible in practice).
 pub fn unsafe_digest_bytes_to_felts(input: &BytesDigest) -> [Goldilocks; POSEIDON2_OUTPUT] {
 	let u64s = unsafe_digest_bytes_to_u64s(input);
-	[from_u64(u64s[0]), from_u64(u64s[1]), from_u64(u64s[2]), from_u64(u64s[3])]
+	core::array::from_fn(|i| from_u64(u64s[i]))
 }
 
 /// Convert 32-byte digest to 8 field elements using safe 4-bytes-per-felt encoding.
@@ -295,7 +295,7 @@ pub fn safe_digest_bytes_to_felts(input: &BytesDigest) -> [Goldilocks; SAFE_DIGE
 
 /// Convert field elements to 32-byte digest (inverse of `unsafe_digest_bytes_to_felts`).
 pub fn digest_felts_to_bytes(input: &[Goldilocks; POSEIDON2_OUTPUT]) -> BytesDigest {
-	let u64s = [to_u64(input[0]), to_u64(input[1]), to_u64(input[2]), to_u64(input[3])];
+	let u64s: [u64; POSEIDON2_OUTPUT] = core::array::from_fn(|i| to_u64(input[i]));
 	digest_u64s_to_bytes(&u64s)
 }
 
