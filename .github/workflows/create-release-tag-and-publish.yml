@@ -3,6 +3,7 @@ name: Create Release Tag & Publish
 env:
   CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 on:
   pull_request:
