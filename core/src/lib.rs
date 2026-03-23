@@ -83,7 +83,7 @@ impl Poseidon2State {
 	fn finalize(self) -> [u8; 32] {
 		let state = self.finalize_state();
 		digest_felts_to_bytes(
-			&state[..POSEIDON2_OUTPUT].try_into().expect("POSEIDON2_OUTPUT <= SPONGE_WIDTH"),
+			&state[..POSEIDON2_OUTPUT].try_into().expect("POSEIDON2_OUTPUT finalize <= SPONGE_WIDTH"),
 		)
 	}
 
@@ -97,12 +97,12 @@ impl Poseidon2State {
 		}
 
 		let h1: [u8; 32] = digest_felts_to_bytes(
-			&self.state[..POSEIDON2_OUTPUT].try_into().expect("POSEIDON2_OUTPUT != 4"),
+			&self.state[..POSEIDON2_OUTPUT].try_into().expect("POSEIDON2_OUTPUT <= SPONGE_WIDTH"),
 		);
 		// second squeeze
 		self.poseidon2.permute_mut(&mut self.state);
 		let h2: [u8; 32] = digest_felts_to_bytes(
-			&self.state[..POSEIDON2_OUTPUT].try_into().expect("POSEIDON2_OUTPUT != 4"),
+			&self.state[..POSEIDON2_OUTPUT].try_into().expect("POSEIDON2_OUTPUT second squeeze <= SPONGE_WIDTH"),
 		);
 
 		[h1, h2].concat().try_into().expect("64 bytes")
@@ -120,15 +120,7 @@ pub fn poseidon2_from_seed(seed: u64) -> Poseidon2State {
 	}
 }
 
-// This function is for hashing field elements in the storage trie. It pads to 189 field elements
-// because the zk-circuit we use for transaction inclusion verifies a storage proof and requires a
-// fixed amount of field elements (the maximum that could be enountered in the storage proof) as a
-// preimage
 fn hash_circuit_padding_felts<const C: usize>(mut x: Vec<Goldilocks>) -> [u8; 32] {
-	// This function doesn't protect against length extension attacks but is safe as
-	// long as the input felts are the outputs of an injective encoding.
-	// For this reason, we wrap it in hash_padded which performs injective encoding from bytes,
-	// so application users are safe.
 	let len = x.len();
 	if len < C {
 		x.resize(C, Goldilocks::ZERO);
