@@ -597,10 +597,11 @@ fn test_integrated_operations_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use dudect_bencher::rand::SeedableRng;
 
 	#[test]
 	fn test_input_generation_distinguishable() {
-		let mut rng = BenchRng::new();
+		let mut rng = BenchRng::seed_from_u64(0);
 
 		// Test byte input generation
 		let fixed = generate_fixed_byte_input(32, &mut rng);
