@@ -171,11 +171,6 @@ impl PoseidonHasher {
 		hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(x)
 	}
 
-	/// Alias for hash_for_circuit (used by Substrate's Hasher trait).
-	pub fn hash_padded(x: &[u8]) -> [u8; 32] {
-		Self::hash_for_circuit(x)
-	}
-
 	/// Hash storage key or value.
 	///
 	/// Decodes the input bytes into `T` and converts to felts according to `ToFelts`.

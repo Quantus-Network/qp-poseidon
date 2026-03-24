@@ -16,7 +16,7 @@ use qp_poseidon_core::PoseidonCore;
 
 // Hash some bytes with padding (recommended for circuit compatibility)
 let data = b"hello world";
-let hash = PoseidonCore::hash_padded(data);
+let hash = PoseidonCore::hash_for_circuit(data);
 println!("Hash: {:?}", hash);
 
 // Hash without padding
