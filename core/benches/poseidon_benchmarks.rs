@@ -2,9 +2,10 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use p3_field::integers::QuotientMap;
 use p3_goldilocks::Goldilocks;
 use qp_poseidon_core::{
-	constants::create_poseidon, hash_padded_bytes, hash_squeeze_twice, hash_variable_length,
-	hash_variable_length_bytes, poseidon2_from_seed, serialization::injective_bytes_to_felts,
+	hash_bytes, hash_for_circuit, hash_squeeze_twice, hash_to_bytes, poseidon2_from_seed,
+	serialization::bytes_to_felts,
 };
+use qp_poseidon_constants::create_poseidon;
 
 /// Generate test data of varying sizes for benchmarking
 fn generate_test_data(size: usize) -> Vec<u8> {
@@ -29,19 +30,19 @@ fn bench_hash_only(c: &mut Criterion) {
 		let data = generate_test_data(size);
 
 		group.throughput(Throughput::Bytes(size as u64));
-		group.bench_with_input(BenchmarkId::new("hash_padded_bytes", size), &data, |b, data| {
+		group.bench_with_input(BenchmarkId::new("hash_for_circuit", size), &data, |b, data| {
 			b.iter(|| {
-				let result = hash_padded_bytes::<189>(black_box(data));
+				let result = hash_for_circuit::<189>(black_box(data));
 				black_box(result)
 			})
 		});
 
 		group.bench_with_input(
-			BenchmarkId::new("hash_variable_length_bytes", size),
+			BenchmarkId::new("hash_bytes", size),
 			&data,
 			|b, data| {
 				b.iter(|| {
-					let result = hash_variable_length_bytes(black_box(data));
+					let result = hash_bytes(black_box(data));
 					black_box(result)
 				})
 			},
@@ -54,19 +55,19 @@ fn bench_hash_only(c: &mut Criterion) {
 		let felts = generate_test_felts(count);
 
 		group.throughput(Throughput::Elements(count as u64));
-		group.bench_with_input(BenchmarkId::new("hash_padded_felts", count), &felts, |b, felts| {
+		group.bench_with_input(BenchmarkId::new("hash_to_bytes_felts", count), &felts, |b, felts| {
 			b.iter(|| {
-				let result = hash_variable_length(black_box(felts.clone()));
+				let result = hash_to_bytes(black_box(felts));
 				black_box(result)
 			})
 		});
 
 		group.bench_with_input(
-			BenchmarkId::new("hash_variable_length_felts", count),
+			BenchmarkId::new("hash_to_bytes_felts_variable", count),
 			&felts,
 			|b, felts| {
 				b.iter(|| {
-					let result = hash_variable_length(black_box(felts.clone()));
+					let result = hash_to_bytes(black_box(felts));
 					black_box(result)
 				})
 			},
@@ -88,22 +89,22 @@ fn bench_create_and_hash(c: &mut Criterion) {
 
 		group.throughput(Throughput::Bytes(size as u64));
 		group.bench_with_input(
-			BenchmarkId::new("new_and_hash_padded_bytes", size),
+			BenchmarkId::new("new_and_hash_for_circuit", size),
 			&data,
 			|b, data| {
 				b.iter(|| {
-					let result = hash_padded_bytes::<189>(black_box(data));
+					let result = hash_for_circuit::<189>(black_box(data));
 					black_box(result)
 				})
 			},
 		);
 
 		group.bench_with_input(
-			BenchmarkId::new("new_and_hash_variable_length_bytes", size),
+			BenchmarkId::new("new_and_hash_bytes", size),
 			&data,
 			|b, data| {
 				b.iter(|| {
-					let result = hash_variable_length_bytes(black_box(data));
+					let result = hash_bytes(black_box(data));
 					black_box(result)
 				})
 			},
@@ -117,22 +118,22 @@ fn bench_create_and_hash(c: &mut Criterion) {
 
 		group.throughput(Throughput::Elements(count as u64));
 		group.bench_with_input(
-			BenchmarkId::new("new_and_hash_padded_felts", count),
+			BenchmarkId::new("new_and_hash_to_bytes_felts", count),
 			&felts,
 			|b, felts| {
 				b.iter(|| {
-					let result = hash_variable_length(black_box(felts.clone()));
+					let result = hash_to_bytes(black_box(felts));
 					black_box(result)
 				})
 			},
 		);
 
 		group.bench_with_input(
-			BenchmarkId::new("new_and_hash_variable_length_felts", count),
+			BenchmarkId::new("new_and_hash_to_bytes_felts_variable", count),
 			&felts,
 			|b, felts| {
 				b.iter(|| {
-					let result = hash_variable_length(black_box(felts.clone()));
+					let result = hash_to_bytes(black_box(felts));
 					black_box(result)
 				})
 			},
@@ -196,11 +197,11 @@ fn bench_utility_functions(c: &mut Criterion) {
 
 		group.throughput(Throughput::Bytes(size as u64));
 		group.bench_with_input(
-			BenchmarkId::new("injective_bytes_to_felts", size),
+			BenchmarkId::new("bytes_to_felts", size),
 			&data,
 			|b, data| {
 				b.iter(|| {
-					let result = injective_bytes_to_felts::<Goldilocks>(black_box(data));
+					let result = bytes_to_felts(black_box(data));
 					black_box(result)
 				})
 			},
