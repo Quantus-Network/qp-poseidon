@@ -1,11 +1,11 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use p3_field::integers::QuotientMap;
 use p3_goldilocks::Goldilocks;
+use qp_poseidon_constants::create_poseidon;
 use qp_poseidon_core::{
 	hash_bytes, hash_for_circuit, hash_squeeze_twice, hash_to_bytes, poseidon2_from_seed,
 	serialization::bytes_to_felts,
 };
-use qp_poseidon_constants::create_poseidon;
 
 /// Generate test data of varying sizes for benchmarking
 fn generate_test_data(size: usize) -> Vec<u8> {
@@ -37,16 +37,12 @@ fn bench_hash_only(c: &mut Criterion) {
 			})
 		});
 
-		group.bench_with_input(
-			BenchmarkId::new("hash_bytes", size),
-			&data,
-			|b, data| {
-				b.iter(|| {
-					let result = hash_bytes(black_box(data));
-					black_box(result)
-				})
-			},
-		);
+		group.bench_with_input(BenchmarkId::new("hash_bytes", size), &data, |b, data| {
+			b.iter(|| {
+				let result = hash_bytes(black_box(data));
+				black_box(result)
+			})
+		});
 	}
 
 	// Test hashing field elements directly
@@ -55,12 +51,16 @@ fn bench_hash_only(c: &mut Criterion) {
 		let felts = generate_test_felts(count);
 
 		group.throughput(Throughput::Elements(count as u64));
-		group.bench_with_input(BenchmarkId::new("hash_to_bytes_felts", count), &felts, |b, felts| {
-			b.iter(|| {
-				let result = hash_to_bytes(black_box(felts));
-				black_box(result)
-			})
-		});
+		group.bench_with_input(
+			BenchmarkId::new("hash_to_bytes_felts", count),
+			&felts,
+			|b, felts| {
+				b.iter(|| {
+					let result = hash_to_bytes(black_box(felts));
+					black_box(result)
+				})
+			},
+		);
 
 		group.bench_with_input(
 			BenchmarkId::new("hash_to_bytes_felts_variable", count),
@@ -99,16 +99,12 @@ fn bench_create_and_hash(c: &mut Criterion) {
 			},
 		);
 
-		group.bench_with_input(
-			BenchmarkId::new("new_and_hash_bytes", size),
-			&data,
-			|b, data| {
-				b.iter(|| {
-					let result = hash_bytes(black_box(data));
-					black_box(result)
-				})
-			},
-		);
+		group.bench_with_input(BenchmarkId::new("new_and_hash_bytes", size), &data, |b, data| {
+			b.iter(|| {
+				let result = hash_bytes(black_box(data));
+				black_box(result)
+			})
+		});
 	}
 
 	// Test with field elements
@@ -196,16 +192,12 @@ fn bench_utility_functions(c: &mut Criterion) {
 		let data = generate_test_data(size);
 
 		group.throughput(Throughput::Bytes(size as u64));
-		group.bench_with_input(
-			BenchmarkId::new("bytes_to_felts", size),
-			&data,
-			|b, data| {
-				b.iter(|| {
-					let result = bytes_to_felts(black_box(data));
-					black_box(result)
-				})
-			},
-		);
+		group.bench_with_input(BenchmarkId::new("bytes_to_felts", size), &data, |b, data| {
+			b.iter(|| {
+				let result = bytes_to_felts(black_box(data));
+				black_box(result)
+			})
+		});
 	}
 
 	group.finish();
