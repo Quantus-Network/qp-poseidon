@@ -160,6 +160,22 @@ impl Hasher for PoseidonHasher {
 	fn hash(x: &[u8]) -> H256 {
 		H256::from_slice(&Self::hash_for_circuit(x))
 	}
+
+	fn hash_node(encoded_node: &[u8]) -> H256 {
+		let felts: Vec<Goldilocks> = encoded_node
+			.chunks(8)
+			.map(|chunk| {
+				let mut buf = [0u8; 8];
+				buf[..chunk.len()].copy_from_slice(chunk);
+				Goldilocks::from_u64(u64::from_le_bytes(buf))
+			})
+			.collect();
+		H256::from_slice(&hash_to_bytes(&felts))
+	}
+
+	fn hash_value(value: &[u8]) -> H256 {
+		H256::from_slice(&Self::hash_for_circuit(value))
+	}
 }
 
 impl PoseidonHasher {
