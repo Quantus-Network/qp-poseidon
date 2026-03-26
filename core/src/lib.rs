@@ -15,8 +15,8 @@ use qp_poseidon_constants::{POSEIDON2_OUTPUT, SPONGE_RATE, SPONGE_WIDTH};
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
 /// The number of field elements to which inputs are padded in circuit-compatible hashing functions.
-/// With injective encoding (4 bytes/felt + terminator), 130 felts supports ~516 bytes.
-pub const FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 130;
+/// With injective encoding (4 bytes/felt + terminator), 160 felts supports up to 639 bytes.
+pub const FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 160;
 
 // Internal state for Poseidon2 hashing
 pub struct Poseidon2State {
@@ -160,7 +160,8 @@ pub fn hash_bytes(x: &[u8]) -> [u8; 32] {
 
 /// Hash bytes for circuit compatibility.
 ///
-/// Converts bytes to field elements, pads to C elements, then hashes.
+/// Converts bytes to field elements, then hashes. If the resulting field element
+/// count is less than C, the input is zero-padded to exactly C elements before hashing.
 /// Use this when the hash must match an in-circuit computation with fixed input size.
 pub fn hash_for_circuit<const C: usize>(x: &[u8]) -> [u8; 32] {
 	hash_felts_for_circuit::<C>(bytes_to_felts(x))
@@ -168,8 +169,9 @@ pub fn hash_for_circuit<const C: usize>(x: &[u8]) -> [u8; 32] {
 
 /// Hash field elements for circuit compatibility.
 ///
-/// Pads to C elements before hashing.
-/// Use this when the hash must match an in-circuit computation with fixed input size.
+/// If the input has fewer than C elements, it is zero-padded to exactly C elements
+/// before hashing. Use this when the hash must match an in-circuit computation with
+/// fixed input size.
 pub fn hash_felts_for_circuit<const C: usize>(x: Vec<Goldilocks>) -> [u8; 32] {
 	serialization::digest_to_bytes(&pad_and_hash::<C>(x))
 }

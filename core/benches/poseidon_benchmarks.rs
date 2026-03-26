@@ -3,8 +3,7 @@ use p3_field::integers::QuotientMap;
 use p3_goldilocks::Goldilocks;
 use qp_poseidon_constants::create_poseidon;
 use qp_poseidon_core::{
-	hash_bytes, hash_for_circuit, hash_squeeze_twice, hash_to_bytes, poseidon2_from_seed,
-	serialization::bytes_to_felts,
+	hash_bytes, hash_for_circuit, hash_squeeze_twice, hash_to_bytes, serialization::bytes_to_felts,
 };
 
 /// Generate test data of varying sizes for benchmarking
@@ -53,17 +52,6 @@ fn bench_hash_only(c: &mut Criterion) {
 		group.throughput(Throughput::Elements(count as u64));
 		group.bench_with_input(
 			BenchmarkId::new("hash_to_bytes_felts", count),
-			&felts,
-			|b, felts| {
-				b.iter(|| {
-					let result = hash_to_bytes(black_box(felts));
-					black_box(result)
-				})
-			},
-		);
-
-		group.bench_with_input(
-			BenchmarkId::new("hash_to_bytes_felts_variable", count),
 			&felts,
 			|b, felts| {
 				b.iter(|| {
@@ -123,17 +111,6 @@ fn bench_create_and_hash(c: &mut Criterion) {
 				})
 			},
 		);
-
-		group.bench_with_input(
-			BenchmarkId::new("new_and_hash_to_bytes_felts_variable", count),
-			&felts,
-			|b, felts| {
-				b.iter(|| {
-					let result = hash_to_bytes(black_box(felts));
-					black_box(result)
-				})
-			},
-		);
 	}
 
 	group.finish();
@@ -142,13 +119,6 @@ fn bench_create_and_hash(c: &mut Criterion) {
 /// Benchmark just the initialization cost
 fn bench_initialization(c: &mut Criterion) {
 	let mut group = c.benchmark_group("initialization");
-
-	group.bench_function("new_with_seed", |b| {
-		b.iter(|| {
-			let hasher = poseidon2_from_seed(black_box(12345));
-			black_box(hasher)
-		})
-	});
 
 	group.bench_function("create_poseidon", |b| {
 		b.iter(|| {
