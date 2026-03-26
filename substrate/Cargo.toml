@@ -18,6 +18,7 @@ categories = ["cryptography"]
 
 [dependencies]
 qp-poseidon-core.workspace = true
+qp-poseidon-constants.workspace = true
 p3-goldilocks.workspace = true
 p3-field.workspace = true
 log.workspace = true
