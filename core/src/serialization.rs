@@ -5,7 +5,6 @@
 //! ## API Overview
 //!
 //! - `bytes_to_felts` / `felts_to_bytes` - Variable-length byte arrays (4 bytes/felt + terminator)
-//! - `digest_to_felts` / `felts_to_digest` - Fixed 32-byte data → 8 felts (4 bytes/felt,
 //!   collision-resistant)
 //! - `digest_to_bytes` / `bytes_to_digest` - Hash output (4 felts ↔ 32 bytes, 8 bytes/felt)
 //!
@@ -26,7 +25,7 @@ pub const FELTS_PER_U128: usize = 4;
 pub const FELTS_PER_U64: usize = 2;
 pub const AMOUNT_QUANTIZATION_FACTOR: u128 = 10_000_000_000u128; // 10^10
 
-/// Number of field elements for a 32-byte digest (4 bytes per felt).
+/// Number of field elements for a 32-byte digest (8 bytes per felt).
 pub const DIGEST_NUM_FELTS: usize = 8;
 
 /// Bytes per field element in the standard encoding.
@@ -142,37 +141,6 @@ pub fn felts_to_bytes(input: &[Goldilocks]) -> Result<Vec<u8>, &'static str> {
 /// Convert a string to field elements.
 pub fn string_to_felts(input: &str) -> Vec<Goldilocks> {
 	bytes_to_felts(input.as_bytes())
-}
-
-// ============================================================================
-// Fixed 32-byte digest <-> felts
-// ============================================================================
-
-/// Convert a 32-byte digest to 8 field elements.
-///
-/// Uses 4 bytes per field element. Since the input length is fixed (32 bytes),
-/// no terminator is needed - the encoding is unambiguous.
-///
-/// Use this for hashes, secrets, account IDs, and other fixed 32-byte values.
-///
-/// # Example
-/// ```
-/// use qp_poseidon_core::serialization::digest_to_felts;
-/// let hash = [0u8; 32];
-/// let felts = digest_to_felts(&hash);
-/// assert_eq!(felts.len(), 8);
-/// ```
-pub fn digest_to_felts(input: &BytesDigest) -> [Goldilocks; DIGEST_NUM_FELTS] {
-	let u64s = digest_to_u64s(input);
-	core::array::from_fn(|i| from_u64(u64s[i]))
-}
-
-/// Convert 8 field elements back to a 32-byte digest.
-///
-/// Inverse of `digest_to_felts`.
-pub fn felts_to_digest(input: &[Goldilocks; DIGEST_NUM_FELTS]) -> BytesDigest {
-	let u64s: [u64; DIGEST_NUM_FELTS] = core::array::from_fn(|i| to_u64(input[i]));
-	u64s_to_digest(&u64s)
 }
 
 // ============================================================================
@@ -350,21 +318,6 @@ mod tests {
 			let reconstructed = felts_to_bytes(&felts).unwrap();
 			assert_eq!(original, reconstructed);
 		}
-	}
-
-	#[test]
-	fn test_digest_round_trip() {
-		let original = [42u8; 32];
-		let felts = digest_to_felts(&original);
-		let reconstructed = felts_to_digest(&felts);
-		assert_eq!(original, reconstructed);
-	}
-
-	#[test]
-	fn test_digest_uses_8_felts() {
-		let digest = [0u8; 32];
-		let felts = digest_to_felts(&digest);
-		assert_eq!(felts.len(), 8);
 	}
 
 	#[test]
