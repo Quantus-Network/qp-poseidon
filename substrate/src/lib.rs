@@ -19,7 +19,7 @@ use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::Goldilocks;
 use qp_poseidon_core::{
 	hash_for_circuit, hash_to_bytes,
-	serialization::{digest_to_felts, u128_to_quantized_felt, u64_to_felts},
+	serialization::{bytes_to_digest, u128_to_quantized_felt, u64_to_felts},
 	FIELD_ELEMENT_PREIMAGE_PADDING_LEN,
 };
 use scale_info::TypeInfo;
@@ -68,20 +68,23 @@ impl ToFelts for u128 {
 	}
 }
 
-/// 32-byte arrays are encoded as 8 field elements (4 bytes per felt).
-/// This ensures collision-resistant encoding for secrets, hashes, and account IDs.
+/// 32-byte arrays are encoded as 4 field elements (8 bytes per felt).
+/// This encoding is used for hash outputs and account IDs in storage.
+/// The values in the leaf are constrained by the storage proof, so
+/// collision resistance is provided by the merkle proof verification.
 impl ToFelts for [u8; 32] {
 	fn write_felts(&self, dest: &mut Vec<Goldilocks>) {
-		dest.extend(digest_to_felts(self));
+		dest.extend(bytes_to_digest::<Goldilocks>(self));
 	}
 }
 
-/// Account IDs are encoded as 8 field elements (4 bytes per felt).
-/// This ensures collision-resistant encoding for account addresses.
+/// Account IDs are encoded as 4 field elements (8 bytes per felt).
+/// The values are constrained by the storage proof, so collision resistance
+/// is provided by the merkle proof verification rather than the encoding.
 impl ToFelts for sp_core::crypto::AccountId32 {
 	fn write_felts(&self, dest: &mut Vec<Goldilocks>) {
 		let bytes: &[u8; 32] = self.as_ref();
-		dest.extend(digest_to_felts(bytes));
+		dest.extend(bytes_to_digest::<Goldilocks>(bytes));
 	}
 }
 
@@ -241,7 +244,8 @@ impl sp_runtime::traits::Hash for PoseidonHasher {
 mod tests {
 	use super::*;
 	use hex;
-	use qp_poseidon_core::serialization::{bytes_to_felts, DIGEST_NUM_FELTS};
+	use qp_poseidon_constants::POSEIDON2_OUTPUT;
+	use qp_poseidon_core::serialization::bytes_to_felts;
 	use scale_info::prelude::vec;
 
 	#[cfg(feature = "std")]
@@ -454,22 +458,22 @@ mod tests {
 	}
 
 	#[test]
-	fn test_to_felts_uses_8_felts_for_accounts() {
+	fn test_to_felts_uses_4_felts_for_accounts() {
 		use sp_core::crypto::AccountId32;
 
 		let account = AccountId32::new([42u8; 32]);
 		let felts = account.to_felts();
 
-		// Should produce 8 felts (4 bytes per felt for 32 bytes)
-		assert_eq!(felts.len(), DIGEST_NUM_FELTS);
+		// Should produce 4 felts (8 bytes per felt for 32 bytes)
+		assert_eq!(felts.len(), POSEIDON2_OUTPUT);
 	}
 
 	#[test]
-	fn test_to_felts_uses_8_felts_for_byte_arrays() {
+	fn test_to_felts_uses_4_felts_for_byte_arrays() {
 		let bytes = [42u8; 32];
 		let felts = bytes.to_felts();
 
-		// Should produce 8 felts (4 bytes per felt for 32 bytes)
-		assert_eq!(felts.len(), DIGEST_NUM_FELTS);
+		// Should produce 4 felts (8 bytes per felt for 32 bytes)
+		assert_eq!(felts.len(), POSEIDON2_OUTPUT);
 	}
 }

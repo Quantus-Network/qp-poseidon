@@ -54,7 +54,7 @@ let string_felts = injective_string_to_felts("hello");
 
 ### Constants
 
-- `FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 190` - Minimum field elements for circuit-compatible padding
+- `FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 160` - Minimum field elements for circuit-compatible padding
 
 ### Padding Behavior
 
