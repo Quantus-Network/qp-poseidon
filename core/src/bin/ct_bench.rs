@@ -18,7 +18,7 @@ use p3_goldilocks::Goldilocks;
 use p3_symmetric::Permutation;
 use qp_poseidon_core::{serialization::bytes_to_felts, *};
 
-const FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 189;
+const FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 160;
 
 // Test sizes in bytes
 const SMALL_INPUT_SIZE: usize = 32;
