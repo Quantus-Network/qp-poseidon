@@ -6,9 +6,7 @@ use qp_poseidon_constants as constants;
 
 pub mod serialization;
 
-use crate::serialization::{
-	digest_felts_to_bytes, injective_bytes_to_felts, non_injective_bytes_to_felts,
-};
+use crate::serialization::bytes_to_felts;
 use alloc::vec::Vec;
 use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::{Goldilocks, Poseidon2Goldilocks};
@@ -17,7 +15,8 @@ use qp_poseidon_constants::{POSEIDON2_OUTPUT, SPONGE_RATE, SPONGE_WIDTH};
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
 /// The number of field elements to which inputs are padded in circuit-compatible hashing functions.
-pub const FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 80;
+/// With injective encoding (4 bytes/felt + terminator), 160 felts supports up to 639 bytes.
+pub const FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 160;
 
 // Internal state for Poseidon2 hashing
 pub struct Poseidon2State {
@@ -48,7 +47,6 @@ impl Poseidon2State {
 
 	#[inline]
 	fn absorb_full_block(&mut self) {
-		// absorb SPONGE_RATE elements into state, then permute
 		for i in 0..SPONGE_RATE {
 			self.state[i] += self.buf[i];
 		}
@@ -64,49 +62,41 @@ impl Poseidon2State {
 	}
 
 	fn append_bytes(&mut self, bytes: &[u8]) {
-		let felts = injective_bytes_to_felts(bytes);
+		let felts = bytes_to_felts(bytes);
 		self.append(&felts);
 	}
 
-	/// Finalize with variable-length padding (…||1||0* to SPONGE_RATE) and return the full state.
 	fn finalize_state(mut self) -> [Goldilocks; SPONGE_WIDTH] {
-		// message-end '1'
 		self.push_to_buf(Goldilocks::ONE);
-		// zero-fill remaining of final block
 		while self.buf_len != 0 {
 			self.push_to_buf(Goldilocks::ZERO);
 		}
 		self.state
 	}
 
-	/// Finalize and return a 32-byte digest (first POSEIDON2_OUTPUT felts).
-	fn finalize(self) -> [u8; 32] {
+	fn finalize_to_felts(self) -> [Goldilocks; POSEIDON2_OUTPUT] {
 		let state = self.finalize_state();
-		digest_felts_to_bytes(
-			&state[..POSEIDON2_OUTPUT]
-				.try_into()
-				.expect("POSEIDON2_OUTPUT finalize <= SPONGE_WIDTH"),
-		)
+		state[..POSEIDON2_OUTPUT].try_into().expect("POSEIDON2_OUTPUT <= SPONGE_WIDTH")
 	}
 
-	/// Finalize and squeeze 64 bytes (two squeezes).
-	fn finalize_twice(mut self) -> [u8; 64] {
-		// message-end '1'
+	fn finalize_to_bytes(self) -> [u8; 32] {
+		serialization::digest_to_bytes(&self.finalize_to_felts())
+	}
+
+	fn finalize_squeeze_twice(mut self) -> [u8; 64] {
 		self.push_to_buf(Goldilocks::ONE);
-		// zero-fill remaining of final block
 		while self.buf_len != 0 {
 			self.push_to_buf(Goldilocks::ZERO);
 		}
 
-		let h1: [u8; 32] = digest_felts_to_bytes(
-			&self.state[..POSEIDON2_OUTPUT]
+		let h1: [u8; 32] = serialization::digest_to_bytes(
+			self.state[..POSEIDON2_OUTPUT]
 				.try_into()
 				.expect("POSEIDON2_OUTPUT <= SPONGE_WIDTH"),
 		);
-		// second squeeze
 		self.poseidon2.permute_mut(&mut self.state);
-		let h2: [u8; 32] = digest_felts_to_bytes(
-			&self.state[..POSEIDON2_OUTPUT]
+		let h2: [u8; 32] = serialization::digest_to_bytes(
+			self.state[..POSEIDON2_OUTPUT]
 				.try_into()
 				.expect("POSEIDON2_OUTPUT second squeeze <= SPONGE_WIDTH"),
 		);
@@ -126,67 +116,104 @@ pub fn poseidon2_from_seed(seed: u64) -> Poseidon2State {
 	}
 }
 
-fn hash_circuit_padding_felts<const C: usize>(mut x: Vec<Goldilocks>) -> [u8; 32] {
+fn pad_and_hash<const C: usize>(mut x: Vec<Goldilocks>) -> [Goldilocks; POSEIDON2_OUTPUT] {
 	let len = x.len();
 	if len < C {
 		x.resize(C, Goldilocks::ZERO);
 	}
-
-	hash_variable_length(x)
+	hash_to_felts(&x)
 }
 
-/// Hash bytes with constant padding to size C to ensure consistent circuit behavior.
-/// Pads to C elements if shorter; no padding if C or more elements.
-pub fn hash_padded_bytes<const C: usize>(x: &[u8]) -> [u8; 32] {
-	hash_circuit_padding_felts::<C>(injective_bytes_to_felts(x))
-}
+// ============================================================================
+// Public hash functions
+// ============================================================================
 
-/// Hash bytes with non-injective encoding and constant padding to size C.
-/// Uses 8 bytes per felt (vs 4 for injective). Not collision-resistant for variable-length inputs.
-/// Pads to C elements if shorter; no padding if C or more elements.
-pub fn hash_padded_bytes_non_injective<const C: usize>(x: &[u8]) -> [u8; 32] {
-	hash_circuit_padding_felts::<C>(non_injective_bytes_to_felts(x))
-}
-
-/// Hash field elements without any padding
-pub fn hash_variable_length(x: Vec<Goldilocks>) -> [u8; 32] {
+/// Hash field elements to 4 field elements (native Poseidon2 output).
+///
+/// This is the primary hash function. Use this when you need to chain hashes
+/// or work with field elements directly (e.g., in circuits).
+pub fn hash_to_felts(x: &[Goldilocks]) -> [Goldilocks; POSEIDON2_OUTPUT] {
 	let mut st = Poseidon2State::new();
-	st.append(&x);
-	st.finalize()
+	st.append(x);
+	st.finalize_to_felts()
 }
 
-/// Double hash (preimage -> hash -> hash) field elements without any padding
-pub fn double_hash_variable_length(x: Vec<Goldilocks>) -> [u8; 32] {
+/// Hash field elements to a 32-byte digest.
+///
+/// Converts the 4-felt hash output to bytes (8 bytes per felt).
+/// Use this when you need bytes for storage, transmission, or display.
+pub fn hash_to_bytes(x: &[Goldilocks]) -> [u8; 32] {
 	let mut st = Poseidon2State::new();
-	st.append(&x);
-	// Extract first digest
-	let state_0 = st.finalize_state();
-	let output_0 = &state_0[..POSEIDON2_OUTPUT];
-	// Hash the digest again
-	st = Poseidon2State::new();
-	st.append(output_0);
-	st.finalize()
+	st.append(x);
+	st.finalize_to_bytes()
 }
 
-/// Hash bytes without any padding
-/// NOTE: Not domain-separated from hash_variable_length; use with caution
-pub fn hash_variable_length_bytes(x: &[u8]) -> [u8; 32] {
+/// Hash bytes to a 32-byte digest.
+///
+/// Converts bytes to field elements (4 bytes per felt with terminator),
+/// then hashes the resulting field elements.
+pub fn hash_bytes(x: &[u8]) -> [u8; 32] {
 	let mut st = Poseidon2State::new();
 	st.append_bytes(x);
-	st.finalize()
+	st.finalize_to_bytes()
 }
 
-/// Hash with 512-bit output by squeezing the sponge twice
+/// Hash bytes for circuit compatibility.
+///
+/// Converts bytes to field elements, then hashes. If the resulting field element
+/// count is less than C, the input is zero-padded to exactly C elements before hashing.
+/// Use this when the hash must match an in-circuit computation with fixed input size.
+pub fn hash_for_circuit<const C: usize>(x: &[u8]) -> [u8; 32] {
+	hash_felts_for_circuit::<C>(bytes_to_felts(x))
+}
+
+/// Hash field elements for circuit compatibility.
+///
+/// If the input has fewer than C elements, it is zero-padded to exactly C elements
+/// before hashing. Use this when the hash must match an in-circuit computation with
+/// fixed input size.
+pub fn hash_felts_for_circuit<const C: usize>(x: Vec<Goldilocks>) -> [u8; 32] {
+	serialization::digest_to_bytes(&pad_and_hash::<C>(x))
+}
+
+/// Double hash: hash(hash(input)), returning 4 field elements.
+///
+/// The inner hash output (4 felts) is re-hashed directly as field elements.
+/// Used for wormhole address derivation.
+pub fn hash_twice_to_felts(x: &[Goldilocks]) -> [Goldilocks; POSEIDON2_OUTPUT] {
+	let inner = hash_to_felts(x);
+	hash_to_felts(&inner)
+}
+
+/// Double hash: hash(hash(input)), returning bytes.
+///
+/// The inner hash output (4 felts) is re-hashed directly as field elements.
+/// Used for wormhole address derivation.
+pub fn hash_twice(x: &[Goldilocks]) -> [u8; 32] {
+	serialization::digest_to_bytes(&hash_twice_to_felts(x))
+}
+
+/// Re-hash a 32-byte digest to produce a new 32-byte digest.
+///
+/// Decodes the input bytes as 4 field elements (8 bytes/felt), hashes them,
+/// and returns the result as 32 bytes. Use this when chaining hash outputs.
+pub fn rehash_to_bytes(x: &[u8; 32]) -> [u8; 32] {
+	let felts: [Goldilocks; POSEIDON2_OUTPUT] = serialization::bytes_to_digest(x);
+	hash_to_bytes(&felts)
+}
+
+/// Hash with 512-bit output by squeezing the sponge twice.
+///
+/// Returns 64 bytes: first 32 from initial squeeze, next 32 from second squeeze.
+/// Used for mining proof-of-work.
 pub fn hash_squeeze_twice(x: &[u8]) -> [u8; 64] {
 	let mut st = Poseidon2State::new();
 	st.append_bytes(x);
-	st.finalize_twice()
+	st.finalize_squeeze_twice()
 }
 
 #[cfg(test)]
 mod tests {
-	use crate::serialization::unsafe_digest_bytes_to_felts;
-
 	use super::*;
 	use alloc::vec;
 	use hex;
@@ -196,35 +223,35 @@ mod tests {
 
 	#[test]
 	fn test_empty_input() {
-		let result = hash_padded_bytes::<C>(&[]);
+		let result = hash_for_circuit::<C>(&[]);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_single_byte() {
 		let input = vec![42u8];
-		let result = hash_padded_bytes::<C>(&input);
+		let result = hash_for_circuit::<C>(&input);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_exactly_32_bytes() {
 		let input = [1u8; 32];
-		let result = hash_padded_bytes::<C>(&input);
+		let result = hash_for_circuit::<C>(&input);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_multiple_chunks() {
-		let input = [2u8; 64]; // Two chunks
-		let result = hash_padded_bytes::<C>(&input);
+		let input = [2u8; 64];
+		let result = hash_for_circuit::<C>(&input);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_partial_chunk() {
-		let input = [3u8; 40]; // One full chunk plus 8 bytes
-		let result = hash_padded_bytes::<C>(&input);
+		let input = [3u8; 40];
+		let result = hash_for_circuit::<C>(&input);
 		assert_eq!(result.len(), 32);
 	}
 
@@ -232,11 +259,11 @@ mod tests {
 	fn test_consistency() {
 		let input = [4u8; 50];
 		let iterations = 10;
-		let current_hash = hash_padded_bytes::<C>(&input);
+		let current_hash = hash_for_circuit::<C>(&input);
 
 		for _ in 0..iterations {
-			let hash1 = hash_padded_bytes::<C>(&current_hash);
-			let hash2 = hash_padded_bytes::<C>(&current_hash);
+			let hash1 = hash_for_circuit::<C>(&current_hash);
+			let hash2 = hash_for_circuit::<C>(&current_hash);
 			assert_eq!(hash1, hash2, "Hash function should be deterministic");
 		}
 	}
@@ -245,20 +272,16 @@ mod tests {
 	fn test_different_inputs() {
 		let input1 = [5u8; 32];
 		let input2 = [6u8; 32];
-		let hash1 = hash_padded_bytes::<C>(&input1);
-		let hash2 = hash_padded_bytes::<C>(&input2);
+		let hash1 = hash_for_circuit::<C>(&input1);
+		let hash2 = hash_for_circuit::<C>(&input2);
 		assert_ne!(hash1, hash2, "Different inputs should produce different hashes");
 	}
 
 	#[test]
 	fn test_poseidon2_hash_input_sizes() {
-		// Test inputs from 1 to 128 bytes
 		for size in 1..=128 {
-			// Create a predictable input: repeating byte value based on size
 			let input: Vec<u8> = (0..size).map(|i| (i * i % 256) as u8).collect();
-			let hash = hash_padded_bytes::<C>(&input);
-
-			// Assertions
+			let hash = hash_for_circuit::<C>(&input);
 			assert_eq!(hash.len(), 32, "Input size {} should produce 32-byte hash", size);
 		}
 	}
@@ -268,7 +291,7 @@ mod tests {
 		for overflow in 1..=10 {
 			let preimage =
 				(<p3_goldilocks::Goldilocks as PrimeField64>::ORDER_U64 + overflow).to_le_bytes();
-			let _hash = hash_padded_bytes::<C>(&preimage);
+			let _hash = hash_for_circuit::<C>(&preimage);
 		}
 	}
 
@@ -276,8 +299,8 @@ mod tests {
 	fn test_circuit_preimage() {
 		let preimage =
 			hex::decode("afd8e7530b95ee5ebab950c9a0c62fae1e80463687b3982233028e914f8ec7cc");
-		let hash = hash_padded_bytes::<C>(&preimage.unwrap());
-		let _hash = hash_padded_bytes::<C>(&hash);
+		let hash = hash_for_circuit::<C>(&preimage.unwrap());
+		let _hash = hash_for_circuit::<C>(&hash);
 	}
 
 	#[test]
@@ -296,128 +319,20 @@ mod tests {
 
 		for hex_string in hex_strings.iter() {
 			let preimage = hex::decode(hex_string).unwrap();
-			let hash = hash_padded_bytes::<C>(&preimage);
-			let _hash2 = hash_padded_bytes::<C>(&hash);
+			let hash = hash_for_circuit::<C>(&preimage);
+			let _hash2 = hash_for_circuit::<C>(&hash);
 		}
 	}
 
 	#[test]
-	fn test_known_value_hashes() {
-		let vectors = [
-			(
-				vec![],
-				"55334d59983b44a3f2d665c2cc0deac520503820c2f250f5ab6edb037c73caea",
-				"4d8d22af81f6c27a005a07028590ef4ee480f6c4b93f813daf9de47a07c8ae86",
-			),
-			(
-				vec![0u8],
-				"57c635f16d94de8936a4d0a0856501e1130e74a6fad0d588cd2b92e3b2006bae",
-				"8f5b42e350ff5a12788210c86c2bcd49243b8f9350de818b3b0c56839a42ebad",
-			),
-			(
-				vec![0u8, 0u8],
-				"2eb8c89584a5838e26263204f741981fd6fead53736991652c4896764266422e",
-				"3e6ee24fb61a22f4d825b72fc8ebd359e3b3b9566e246c71c3e450ebe3262f9c",
-			),
-			(
-				vec![0u8, 0u8, 0u8],
-				"e7fc4ca465774d1aa97377c9c11af0e374d02cbe925a3fe5fd8c031db28c9b03",
-				"34f4338a6f1b671062a3ac00b37ca05a47b43e16e589ccaa5b063416ba42356b",
-			),
-			(
-				vec![0u8, 0u8, 0u8, 0u8],
-				"479b6f46eb42ce8e6a8aecc552a2ee240a39d59c88cc9a8474c2b0b690303f66",
-				"7bac8c6bc49b0b750f2ce0912b815a2cb4ae20c75ac430850257882d9d321afa",
-			),
-			(
-				vec![0u8, 0u8, 0u8, 0u8, 0u8],
-				"b7b00d9f32b25353e426583a2805bf750a9a64b9d2c21d606ef1e04e2efe1546",
-				"c95cfddb573adf4070b3d7c8d2dfbbee48b4b973d80cbda2b458abe7bb6f0def",
-			),
-			(
-				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-				"c89c1b7e4eb764bbaa67789d5d3ebfa0c937f14abff4899cf43345c0c9597b2a",
-				"a4dc08d0a8c5ea44007462fe1fd8e45962d4ea85c420eab4140fbb30b5b5e111",
-			),
-			(
-				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-				"c5eb1fba387c58329ce040da2957d346c279fddeb0c939f03d755d914f0f1453",
-				"b01975012df91d9f9f040c34655f23f3ec1f6d1738d85679e9848143756637c9",
-			),
-			(
-				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-				"8bc5641f1bdc24671962aa16d8b04c590227b41a8fec3f6c93a5a58ff55f82dd",
-				"eacd9e48d2e968131e48c8e69f2a211cc06c7778db6c5467348b45418fc7f585",
-			),
-			(
-				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-				"b9b8e15cb341ba3f8a0cb308d1f688b31672363dc91bbcc7c7851f426283b60c",
-				"00df670e8ec0751d3fb9b5f0281d0af9a7a82f62ad35a21247a9d6117daec151",
-			),
-			(
-				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-				"23723c463921f216a0a11cf0dbc3e8f8efe1a58c77cfeee04056777ff41b1d59",
-				"d6182896f274c5d9640972e2bf2a5e893e516a21adfdd8ebd39969128d619934",
-			),
-			(
-				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-				"5914c2191325e6b4c6e0682890aec6c1842534881488ca896764c58d05afceac",
-				"15fc2f3c3bc51c96797b889d4fecfcd3535b959f510c007598a87f099e356303",
-			),
-			(
-				vec![0u8, 0u8, 0u8, 1u8],
-				"c157c163cf6e476ecc83bdb70e3d3cf7c33522ed649da75a77c0a63512f8325c",
-				"6ffff0c97262139567c426e916c1fd70c924010153c366bb2a8957ea89902942",
-			),
-			(
-				vec![1u8, 2, 3, 4, 5, 6, 7, 8],
-				"4030ecfc78d7a57f683a73e39bebcb020b670cb72e55712b4159b34405e870a0",
-				"131020b2e74819343f8568258ae2e9717e9b2253d57baabab78a518bc7499a8b",
-			),
-			(
-				vec![255u8; 32],
-				"6e0e281ff27d6e0d7ec1f482cbe16183b962c7c4f6cbd624205bf8961effcb6c",
-				"41260a4322e97dc3dda2b5f70b5ffb1b43071ad5510e101f34209721042c0987",
-			),
-			(
-				b"hello world".to_vec(),
-				"05fb9811b47254651831fee2d611b94c1d71e78bedb50fed479192096bef6608",
-				"fd1f5d7d4701c25bbdd5dd6e3be6abb474fffbaa402f814dce95f8283abbf3e7",
-			),
-			(
-				(0u8..32).collect::<Vec<u8>>(),
-				"3b280392f79bf5d238d2835d94cc43a297bfd42b8f4a1563528009e52a1014d2",
-				"36884f9093be80632397f5736dce2fece627a4182daf3cdbf8bf12c8e3e02668",
-			),
-		];
-		for (input, expected_hex1, expected_hex2) in vectors.iter() {
-			let hash = hash_padded_bytes::<C>(input);
-			assert_eq!(
-				hex::encode(hash.as_slice()),
-				*expected_hex1,
-				"input: 0x{}",
-				hex::encode(input)
-			);
-
-			let hash2 = hash_variable_length_bytes(input);
-			assert_eq!(
-				hex::encode(hash2.as_slice()),
-				*expected_hex2,
-				"input: 0x{}",
-				hex::encode(input)
-			);
-		}
-	}
-
-	#[test]
-	fn test_hash_variable_length() {
+	fn test_hash_bytes_vs_circuit() {
 		let input = b"test";
-		let padded_hash = hash_padded_bytes::<C>(input);
-		let no_pad_hash = hash_variable_length_bytes(input);
+		let circuit_hash = hash_for_circuit::<C>(input);
+		let no_pad_hash = hash_bytes(input);
 
 		// These should be different since one is padded and the other isn't
-		assert_ne!(padded_hash, no_pad_hash);
-		assert_eq!(padded_hash.len(), 32);
+		assert_ne!(circuit_hash, no_pad_hash);
+		assert_eq!(circuit_hash.len(), 32);
 		assert_eq!(no_pad_hash.len(), 32);
 	}
 
@@ -426,34 +341,210 @@ mod tests {
 		let input = b"test 512-bit hash";
 		let hash512 = hash_squeeze_twice(input);
 
-		// Should be exactly 64 bytes
 		assert_eq!(hash512.len(), 64);
 
-		// First 32 bytes should be hash of input
-		let expected_first = hash_variable_length_bytes(input);
+		let expected_first = hash_bytes(input);
 		assert_eq!(&hash512[0..32], &expected_first);
 
-		// Test deterministic
 		let hash512_2 = hash_squeeze_twice(input);
 		assert_eq!(hash512, hash512_2);
 
-		// Different inputs should produce different outputs
 		let different_hash = hash_squeeze_twice(b"different input");
 		assert_ne!(hash512, different_hash);
 	}
 
 	#[test]
-	fn test_double_hash_variable_length() {
+	fn test_hash_twice() {
 		let preimage = b"double hash test";
-		let first_hash = hash_variable_length_bytes(preimage);
-		let double_hash = double_hash_variable_length(injective_bytes_to_felts(preimage));
+		let input_felts = bytes_to_felts(preimage);
 
-		// Double hash should not equal single hash
-		assert_ne!(first_hash, double_hash);
+		let first_hash_felts = hash_to_felts(&input_felts);
+		let first_hash_bytes = hash_to_bytes(&input_felts);
 
-		// Double hash should equal hashing the first hash with the hash_variable_length function
-		let recomputed_double_hash =
-			hash_variable_length(unsafe_digest_bytes_to_felts(&first_hash).to_vec());
-		assert_eq!(double_hash, recomputed_double_hash);
+		let double_hash_bytes = hash_twice(&input_felts);
+		let double_hash_felts = hash_twice_to_felts(&input_felts);
+
+		assert_ne!(first_hash_bytes, double_hash_bytes);
+
+		let manual_double = hash_to_felts(&first_hash_felts);
+		assert_eq!(double_hash_felts, manual_double);
+
+		assert_eq!(serialization::digest_to_bytes(&double_hash_felts), double_hash_bytes);
+
+		let double_hash_again = hash_twice(&input_felts);
+		assert_eq!(double_hash_bytes, double_hash_again);
+	}
+
+	#[test]
+	fn test_hash_to_felts_and_bytes_consistency() {
+		let input = bytes_to_felts(b"test input");
+		let hash_felts_result = hash_to_felts(&input);
+		let hash_bytes_result = hash_to_bytes(&input);
+
+		assert_eq!(serialization::digest_to_bytes(&hash_felts_result), hash_bytes_result);
+
+		let roundtrip =
+			serialization::digest_to_bytes(&serialization::bytes_to_digest(&hash_bytes_result));
+		assert_eq!(roundtrip, hash_bytes_result);
+	}
+
+	#[test]
+	fn test_hash_chaining() {
+		let input = bytes_to_felts(b"chain test");
+		let h1 = hash_to_felts(&input);
+		let h2 = hash_to_felts(&h1);
+		let h3 = hash_to_felts(&h2);
+
+		assert_ne!(h1, h2);
+		assert_ne!(h2, h3);
+		assert_ne!(h1, h3);
+
+		let h1_again = hash_to_felts(&input);
+		assert_eq!(h1, h1_again);
+	}
+
+	#[test]
+	fn test_rehash_equals_hash_twice() {
+		// This test verifies that the two-step process used in wormhole derivation
+		// (hash_to_bytes followed by rehash_to_bytes) produces the same result
+		// as the direct hash_twice function.
+		let input = bytes_to_felts(b"wormhole derivation test");
+
+		// Method 1: hash_twice (direct double hash)
+		let double_hash = hash_twice(&input);
+
+		// Method 2: hash_to_bytes then rehash_to_bytes (used in chain for wormhole)
+		let first_hash = hash_to_bytes(&input);
+		let rehashed = rehash_to_bytes(&first_hash);
+
+		assert_eq!(
+			double_hash, rehashed,
+			"hash_twice and hash_to_bytes+rehash_to_bytes should produce identical results"
+		);
+
+		// Also verify with different inputs
+		for test_input in [b"secret1".as_slice(), b"another_secret", b""] {
+			let felts = bytes_to_felts(test_input);
+			let via_hash_twice = hash_twice(&felts);
+			let via_rehash = rehash_to_bytes(&hash_to_bytes(&felts));
+			assert_eq!(via_hash_twice, via_rehash);
+		}
+	}
+
+	/// Known Answer Tests (KAT) for hash functions.
+	/// These test vectors ensure hash outputs remain stable across versions.
+	/// Format: (input_bytes, hash_for_circuit_output, hash_bytes_output)
+	#[test]
+	fn test_known_value_hashes() {
+		let vectors: [(Vec<u8>, &str, &str); 18] = [
+			(
+				vec![],
+				"0df5e34c018db4531ca260fcd11bc11f1f10b8b71ac0b11576337194183116eb",
+				"4d8d22af81f6c27a005a07028590ef4ee480f6c4b93f813daf9de47a07c8ae86",
+			),
+			(
+				vec![0u8],
+				"e32220e57457bfd0b6cd315aad7a22c593358acdc48a39c7d6ad41ffaa3bf431",
+				"8f5b42e350ff5a12788210c86c2bcd49243b8f9350de818b3b0c56839a42ebad",
+			),
+			(
+				vec![0u8, 0u8],
+				"a97d393ba877f18fac1dfb5147d3d2d9ba336ed469eca73ed12f93f50a4a4fc1",
+				"3e6ee24fb61a22f4d825b72fc8ebd359e3b3b9566e246c71c3e450ebe3262f9c",
+			),
+			(
+				vec![0u8, 0u8, 0u8],
+				"b5b5415cc72881ebe80e18ad911d21fc752b88c3df57221b83c5dfa1aa325c47",
+				"34f4338a6f1b671062a3ac00b37ca05a47b43e16e589ccaa5b063416ba42356b",
+			),
+			(
+				vec![0u8, 0u8, 0u8, 0u8],
+				"65c5a07eb4e9c1fddd6c8ee617b1ac00c72e4bc06a37446e355a95c234303a9c",
+				"7bac8c6bc49b0b750f2ce0912b815a2cb4ae20c75ac430850257882d9d321afa",
+			),
+			(
+				vec![0u8, 0u8, 0u8, 0u8, 0u8],
+				"7c328b101c21017bb79d54bfd6244beb527e4601406220bc9f77a7c7b742d2af",
+				"c95cfddb573adf4070b3d7c8d2dfbbee48b4b973d80cbda2b458abe7bb6f0def",
+			),
+			(
+				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+				"c627582e69e056cdc034d386752ea3eeb69acabd7418a3a538c77918de48cf0d",
+				"a4dc08d0a8c5ea44007462fe1fd8e45962d4ea85c420eab4140fbb30b5b5e111",
+			),
+			(
+				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+				"ee3a91a06edc3ae9ad1957e7d424bbe61b08bda46b16044d1e4f552f74eedd64",
+				"b01975012df91d9f9f040c34655f23f3ec1f6d1738d85679e9848143756637c9",
+			),
+			(
+				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+				"7cdc33783a2ba3b725f62ec0e45474121224b522b8714ccb94550abec583996a",
+				"eacd9e48d2e968131e48c8e69f2a211cc06c7778db6c5467348b45418fc7f585",
+			),
+			(
+				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+				"930dc000b39defeed3c544afcb883b7107f407b8a0ffa817246ad3ddb31dc2af",
+				"00df670e8ec0751d3fb9b5f0281d0af9a7a82f62ad35a21247a9d6117daec151",
+			),
+			(
+				vec![0u8; 14],
+				"4810afdc177c150f85a768ba0a1e67c11af134e19086484b0c8b3cc4d3c3ad6f",
+				"d6182896f274c5d9640972e2bf2a5e893e516a21adfdd8ebd39969128d619934",
+			),
+			(
+				vec![0u8; 15],
+				"8a585b230a01bc576ea7150f87916eb92301b247bfeb9403f8bb896a6baa5e71",
+				"15fc2f3c3bc51c96797b889d4fecfcd3535b959f510c007598a87f099e356303",
+			),
+			(
+				vec![0u8, 0u8, 0u8, 1u8],
+				"655cca1d2bc760e5c20978d2eb9e24a938e25fafbb0661b7994fa013e8bb2770",
+				"6ffff0c97262139567c426e916c1fd70c924010153c366bb2a8957ea89902942",
+			),
+			(
+				vec![1u8, 2, 3, 4, 5, 6, 7, 8],
+				"abf4f9bd2bd6ddc910e761cb7283494e882f11959ebec5647627ea2dd1b10e2d",
+				"131020b2e74819343f8568258ae2e9717e9b2253d57baabab78a518bc7499a8b",
+			),
+			(
+				vec![255u8; 32],
+				"edc6271851dff14c7b18aeb0e4b9c705c59fa803a1d01c07ca6546ea79f70d4d",
+				"41260a4322e97dc3dda2b5f70b5ffb1b43071ad5510e101f34209721042c0987",
+			),
+			(
+				b"hello world".to_vec(),
+				"9013fb736cc410773e81210af6682173cfca717c7be8c08f4766399074228db7",
+				"fd1f5d7d4701c25bbdd5dd6e3be6abb474fffbaa402f814dce95f8283abbf3e7",
+			),
+			(
+				(0u8..32).collect::<Vec<u8>>(),
+				"91eaaaae1fa9fa10b0f2da281183a4298fcc016206bc293db668e0d14e131add",
+				"36884f9093be80632397f5736dce2fece627a4182daf3cdbf8bf12c8e3e02668",
+			),
+			(
+				(0u8..64).collect::<Vec<u8>>(),
+				"6db5aa1f6332498973890cb0538c09d8efc4c5f4ff229c422b945bca7ccc7bed",
+				"dd0d06fbe4e7575d0eeac53706482cbbe592e269a35bcd5591a495814371724e",
+			),
+		];
+
+		for (input, expected_circuit, expected_bytes) in vectors.iter() {
+			let circuit_hash = hash_for_circuit::<C>(&input);
+			assert_eq!(
+				hex::encode(circuit_hash),
+				*expected_circuit,
+				"hash_for_circuit mismatch for input: 0x{}",
+				hex::encode(input)
+			);
+
+			let bytes_hash = hash_bytes(&input);
+			assert_eq!(
+				hex::encode(bytes_hash),
+				*expected_bytes,
+				"hash_bytes mismatch for input: 0x{}",
+				hex::encode(input)
+			);
+		}
 	}
 }

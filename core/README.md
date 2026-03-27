@@ -16,7 +16,7 @@ use qp_poseidon_core::PoseidonCore;
 
 // Hash some bytes with padding (recommended for circuit compatibility)
 let data = b"hello world";
-let hash = PoseidonCore::hash_padded(data);
+let hash = PoseidonCore::hash_for_circuit(data);
 println!("Hash: {:?}", hash);
 
 // Hash without padding
@@ -54,7 +54,7 @@ let string_felts = injective_string_to_felts("hello");
 
 ### Constants
 
-- `FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 190` - Minimum field elements for circuit-compatible padding
+- `FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 160` - Minimum field elements for circuit-compatible padding
 
 ### Padding Behavior
 

@@ -2553,6 +2553,7 @@ dependencies = [
  "p3-field",
  "p3-goldilocks",
  "parity-scale-codec",
+ "qp-poseidon-constants",
  "qp-poseidon-core",
  "scale-info",
  "serde",

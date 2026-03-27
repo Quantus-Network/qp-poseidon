@@ -16,9 +16,9 @@ use dudect_bencher::{BenchRng, Class, CtRunner};
 use p3_field::{integers::QuotientMap, PrimeCharacteristicRing, PrimeField64};
 use p3_goldilocks::Goldilocks;
 use p3_symmetric::Permutation;
-use qp_poseidon_core::{serialization::injective_bytes_to_felts, *};
+use qp_poseidon_core::{serialization::bytes_to_felts, *};
 
-const FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 189;
+const FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 160;
 
 // Test sizes in bytes
 const SMALL_INPUT_SIZE: usize = 32;
@@ -109,7 +109,7 @@ fn test_hash_padded_bytes_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+			let _result = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
 		});
 	}
 }
@@ -131,7 +131,7 @@ fn test_hash_padded_bytes_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+			let _result = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
 		});
 	}
 }
@@ -153,7 +153,7 @@ fn test_hash_padded_bytes_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+			let _result = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
 		});
 	}
 }
@@ -175,7 +175,7 @@ fn test_hash_padded_bytes_xlarge_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+			let _result = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
 		});
 	}
 }
@@ -197,7 +197,7 @@ fn test_hash_variable_length_bytes_small_ct(runner: &mut CtRunner, rng: &mut Ben
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_variable_length_bytes(&input);
+			let _result = hash_bytes(&input);
 		});
 	}
 }
@@ -219,7 +219,7 @@ fn test_hash_variable_length_bytes_medium_ct(runner: &mut CtRunner, rng: &mut Be
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_variable_length_bytes(&input);
+			let _result = hash_bytes(&input);
 		});
 	}
 }
@@ -241,7 +241,7 @@ fn test_hash_variable_length_bytes_large_ct(runner: &mut CtRunner, rng: &mut Ben
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_variable_length_bytes(&input);
+			let _result = hash_bytes(&input);
 		});
 	}
 }
@@ -362,7 +362,7 @@ fn test_field_absorption_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _felts: Vec<Goldilocks> = injective_bytes_to_felts(&input);
+			let _felts: Vec<Goldilocks> = bytes_to_felts(&input);
 		});
 	}
 }
@@ -384,7 +384,7 @@ fn test_field_absorption_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _felts: Vec<Goldilocks> = injective_bytes_to_felts(&input);
+			let _felts: Vec<Goldilocks> = bytes_to_felts(&input);
 		});
 	}
 }
@@ -406,7 +406,7 @@ fn test_field_absorption_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _felts: Vec<Goldilocks> = injective_bytes_to_felts(&input);
+			let _felts: Vec<Goldilocks> = bytes_to_felts(&input);
 		});
 	}
 }
@@ -428,7 +428,7 @@ fn test_double_hash_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = double_hash_variable_length(felts.clone());
+			let _result = hash_twice(&felts);
 		});
 	}
 }
@@ -450,7 +450,7 @@ fn test_double_hash_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = double_hash_variable_length(felts.clone());
+			let _result = hash_twice(&felts);
 		});
 	}
 }
@@ -472,7 +472,7 @@ fn test_hash_variable_length_felts_small_ct(runner: &mut CtRunner, rng: &mut Ben
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_variable_length(felts.clone());
+			let _result = hash_to_bytes(&felts);
 		});
 	}
 }
@@ -494,7 +494,7 @@ fn test_hash_variable_length_felts_medium_ct(runner: &mut CtRunner, rng: &mut Be
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_variable_length(felts.clone());
+			let _result = hash_to_bytes(&felts);
 		});
 	}
 }
@@ -516,7 +516,7 @@ fn test_hash_variable_length_felts_large_ct(runner: &mut CtRunner, rng: &mut Ben
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_variable_length(felts.clone());
+			let _result = hash_to_bytes(&felts);
 		});
 	}
 }
@@ -538,7 +538,7 @@ fn test_double_hash_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = double_hash_variable_length(felts.clone());
+			let _result = hash_twice(&felts);
 		});
 	}
 }
@@ -564,7 +564,7 @@ fn test_single_byte_edge_cases_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+			let _result = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
 		});
 	}
 }
@@ -587,8 +587,8 @@ fn test_integrated_operations_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 
 		runner.run_one(class, || {
 			// Test a sequence of operations that might be used together
-			let _hash_padded = hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
-			let _hash_variable = hash_variable_length_bytes(&input);
+			let _hash_padded = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+			let _hash_variable = hash_bytes(&input);
 			let _squeeze = hash_squeeze_twice(&input);
 		});
 	}
@@ -597,10 +597,11 @@ fn test_integrated_operations_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use dudect_bencher::rand::SeedableRng;
 
 	#[test]
 	fn test_input_generation_distinguishable() {
-		let mut rng = BenchRng::new();
+		let mut rng = BenchRng::seed_from_u64(0);
 
 		// Test byte input generation
 		let fixed = generate_fixed_byte_input(32, &mut rng);
@@ -627,14 +628,14 @@ mod tests {
 	fn test_ct_functions_compile() {
 		// This test just ensures the hash functions compile and work
 		let input = vec![0u8; 32];
-		let _result = hash_padded_bytes::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
-		let _result2 = hash_variable_length_bytes(&input);
+		let _result = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+		let _result2 = hash_bytes(&input);
 		let _result3 = hash_squeeze_twice(&input);
 
 		// Test field operations
-		let felts = injective_bytes_to_felts(&input);
-		let _result4 = hash_variable_length(felts.clone());
-		let _result5 = double_hash_variable_length(felts);
+		let felts = bytes_to_felts(&input);
+		let _result4 = hash_to_bytes(&felts);
+		let _result5 = hash_twice(&felts);
 	}
 }
 
