@@ -23,8 +23,8 @@ use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 pub const COMPACT_BYTES_PER_FELT: usize = 8;
 
 /// Maximum size of a storage proof node in bytes.
-/// Worst-case branch node: 8 (header) + 32 (partial key) + 8 (bitmap) + 512 (16 children) + 40 (value) = 600 bytes.
-/// We use 640 bytes to provide some margin.
+/// Worst-case branch node: 8 (header) + 32 (partial key) + 8 (bitmap) + 512 (16 children) + 40
+/// (value) = 600 bytes. We use 640 bytes to provide some margin.
 pub const PROOF_NODE_MAX_SIZE_BYTES: usize = 640;
 
 /// Maximum storage proof node size in field elements using compact encoding (8 bytes/felt).
