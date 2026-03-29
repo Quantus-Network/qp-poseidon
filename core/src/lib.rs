@@ -22,18 +22,14 @@ use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 /// Uses the full 8-byte capacity of Goldilocks field elements.
 pub const COMPACT_BYTES_PER_FELT: usize = 8;
 
-/// Maximum size of a trie node in bytes.
+/// Maximum size of a storage proof node in bytes.
 /// Worst-case branch node: 8 (header) + 32 (partial key) + 8 (bitmap) + 512 (16 children) + 40 (value) = 600 bytes.
 /// We use 640 bytes to provide some margin.
-pub const MAX_TRIE_NODE_BYTES: usize = 640;
+pub const PROOF_NODE_MAX_SIZE_BYTES: usize = 640;
 
-/// Maximum trie node size in field elements using compact encoding (8 bytes/felt).
+/// Maximum storage proof node size in field elements using compact encoding (8 bytes/felt).
 /// This is the single source of truth for circuit witness sizing.
-pub const MAX_TRIE_NODE_FELTS: usize = MAX_TRIE_NODE_BYTES / COMPACT_BYTES_PER_FELT; // = 80
-
-/// The number of field elements to which inputs are padded in circuit-compatible hashing functions.
-/// With compact encoding (8 bytes/felt), 80 felts supports up to 640 bytes.
-pub const FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = MAX_TRIE_NODE_FELTS;
+pub const PROOF_NODE_MAX_SIZE_FELTS: usize = PROOF_NODE_MAX_SIZE_BYTES / COMPACT_BYTES_PER_FELT; // = 80
 
 // Internal state for Poseidon2 hashing
 pub struct Poseidon2State {
@@ -240,7 +236,7 @@ mod tests {
 	use hex;
 	use p3_field::PrimeField64;
 
-	const C: usize = FIELD_ELEMENT_PREIMAGE_PADDING_LEN;
+	const C: usize = PROOF_NODE_MAX_SIZE_FELTS;
 
 	#[test]
 	fn test_empty_input() {
