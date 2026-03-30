@@ -6,7 +6,7 @@ use qp_poseidon_constants as constants;
 
 pub mod serialization;
 
-use crate::serialization::bytes_to_felts;
+use crate::serialization::{bytes_to_felts, bytes_to_felts_compact};
 use alloc::vec::Vec;
 use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::{Goldilocks, Poseidon2Goldilocks};
@@ -14,9 +14,22 @@ use p3_symmetric::Permutation;
 use qp_poseidon_constants::{POSEIDON2_OUTPUT, SPONGE_RATE, SPONGE_WIDTH};
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
-/// The number of field elements to which inputs are padded in circuit-compatible hashing functions.
-/// With injective encoding (4 bytes/felt + terminator), 160 felts supports up to 639 bytes.
-pub const FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 160;
+// ============================================================================
+// Compact Encoding Parameters (for storage trie hashing)
+// ============================================================================
+
+/// Bytes per field element in compact encoding.
+/// Uses the full 8-byte capacity of Goldilocks field elements.
+pub const COMPACT_BYTES_PER_FELT: usize = 8;
+
+/// Maximum size of a storage proof node in bytes.
+/// Worst-case branch node: 8 (header) + 32 (partial key) + 8 (bitmap) + 512 (16 children) + 40
+/// (value) = 600 bytes. We use 640 bytes to provide some margin.
+pub const PROOF_NODE_MAX_SIZE_BYTES: usize = 640;
+
+/// Maximum storage proof node size in field elements using compact encoding (8 bytes/felt).
+/// This is the single source of truth for circuit witness sizing.
+pub const PROOF_NODE_MAX_SIZE_FELTS: usize = PROOF_NODE_MAX_SIZE_BYTES / COMPACT_BYTES_PER_FELT; // = 80
 
 // Internal state for Poseidon2 hashing
 pub struct Poseidon2State {
@@ -158,13 +171,17 @@ pub fn hash_bytes(x: &[u8]) -> [u8; 32] {
 	st.finalize_to_bytes()
 }
 
-/// Hash bytes for circuit compatibility.
+/// Hash bytes for circuit compatibility using compact encoding (8 bytes/felt).
 ///
-/// Converts bytes to field elements, then hashes. If the resulting field element
-/// count is less than C, the input is zero-padded to exactly C elements before hashing.
+/// Converts bytes to field elements using compact encoding, then hashes. If the
+/// resulting field element count is less than C, the input is zero-padded to
+/// exactly C elements before hashing.
+///
 /// Use this when the hash must match an in-circuit computation with fixed input size.
+/// The compact encoding uses 8 bytes per felt (vs 4 bytes/felt in injective encoding),
+/// resulting in ~50% fewer constraints in ZK circuits.
 pub fn hash_for_circuit<const C: usize>(x: &[u8]) -> [u8; 32] {
-	hash_felts_for_circuit::<C>(bytes_to_felts(x))
+	hash_felts_for_circuit::<C>(bytes_to_felts_compact(x))
 }
 
 /// Hash field elements for circuit compatibility.
@@ -215,11 +232,12 @@ pub fn hash_squeeze_twice(x: &[u8]) -> [u8; 64] {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use alloc::vec;
+	use crate::alloc::string::ToString;
+	use alloc::{format, vec};
 	use hex;
 	use p3_field::PrimeField64;
 
-	const C: usize = FIELD_ELEMENT_PREIMAGE_PADDING_LEN;
+	const C: usize = PROOF_NODE_MAX_SIZE_FELTS;
 
 	#[test]
 	fn test_empty_input() {
@@ -431,100 +449,160 @@ mod tests {
 		}
 	}
 
+	/// Helper to generate test vectors - run with: cargo test generate_test_vectors -- --nocapture
+	/// Then copy the output into test_known_value_hashes
+	#[test]
+	fn generate_test_vectors() {
+		extern crate std;
+		use std::println;
+
+		let inputs: [Vec<u8>; 18] = [
+			vec![],
+			vec![0u8],
+			vec![0u8, 0u8],
+			vec![0u8, 0u8, 0u8],
+			vec![0u8, 0u8, 0u8, 0u8],
+			vec![0u8, 0u8, 0u8, 0u8, 0u8],
+			vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+			vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+			vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+			vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+			vec![0u8; 14],
+			vec![0u8; 15],
+			vec![0u8, 0u8, 0u8, 1u8],
+			vec![1u8, 2, 3, 4, 5, 6, 7, 8],
+			vec![255u8; 32],
+			b"hello world".to_vec(),
+			(0u8..32).collect::<Vec<u8>>(),
+			(0u8..64).collect::<Vec<u8>>(),
+		];
+
+		println!("\n// Generated test vectors - copy into test_known_value_hashes:");
+		println!("let vectors: [(Vec<u8>, &str, &str); 18] = [");
+		for (i, input) in inputs.iter().enumerate() {
+			let circuit_hash = hash_for_circuit::<C>(input);
+			let bytes_hash = hash_bytes(input);
+			let input_repr = match i {
+				0 => "vec![]".to_string(),
+				1..=9 => format!(
+					"vec![{}]",
+					input.iter().map(|b| format!("{}u8", b)).collect::<Vec<_>>().join(", ")
+				),
+				10 => "vec![0u8; 14]".to_string(),
+				11 => "vec![0u8; 15]".to_string(),
+				12 => "vec![0u8, 0u8, 0u8, 1u8]".to_string(),
+				13 => "vec![1u8, 2, 3, 4, 5, 6, 7, 8]".to_string(),
+				14 => "vec![255u8; 32]".to_string(),
+				15 => "b\"hello world\".to_vec()".to_string(),
+				16 => "(0u8..32).collect::<Vec<u8>>()".to_string(),
+				17 => "(0u8..64).collect::<Vec<u8>>()".to_string(),
+				_ => unreachable!(),
+			};
+			println!(
+				"\t({}, \"{}\", \"{}\"),",
+				input_repr,
+				hex::encode(circuit_hash),
+				hex::encode(bytes_hash)
+			);
+		}
+		println!("];");
+	}
+
 	/// Known Answer Tests (KAT) for hash functions.
 	/// These test vectors ensure hash outputs remain stable across versions.
 	/// Format: (input_bytes, hash_for_circuit_output, hash_bytes_output)
 	#[test]
 	fn test_known_value_hashes() {
+		// Generated test vectors - copy into test_known_value_hashes:
 		let vectors: [(Vec<u8>, &str, &str); 18] = [
 			(
 				vec![],
-				"0df5e34c018db4531ca260fcd11bc11f1f10b8b71ac0b11576337194183116eb",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"4d8d22af81f6c27a005a07028590ef4ee480f6c4b93f813daf9de47a07c8ae86",
 			),
 			(
 				vec![0u8],
-				"e32220e57457bfd0b6cd315aad7a22c593358acdc48a39c7d6ad41ffaa3bf431",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"8f5b42e350ff5a12788210c86c2bcd49243b8f9350de818b3b0c56839a42ebad",
 			),
 			(
 				vec![0u8, 0u8],
-				"a97d393ba877f18fac1dfb5147d3d2d9ba336ed469eca73ed12f93f50a4a4fc1",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"3e6ee24fb61a22f4d825b72fc8ebd359e3b3b9566e246c71c3e450ebe3262f9c",
 			),
 			(
 				vec![0u8, 0u8, 0u8],
-				"b5b5415cc72881ebe80e18ad911d21fc752b88c3df57221b83c5dfa1aa325c47",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"34f4338a6f1b671062a3ac00b37ca05a47b43e16e589ccaa5b063416ba42356b",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8],
-				"65c5a07eb4e9c1fddd6c8ee617b1ac00c72e4bc06a37446e355a95c234303a9c",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"7bac8c6bc49b0b750f2ce0912b815a2cb4ae20c75ac430850257882d9d321afa",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8, 0u8],
-				"7c328b101c21017bb79d54bfd6244beb527e4601406220bc9f77a7c7b742d2af",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"c95cfddb573adf4070b3d7c8d2dfbbee48b4b973d80cbda2b458abe7bb6f0def",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-				"c627582e69e056cdc034d386752ea3eeb69acabd7418a3a538c77918de48cf0d",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"a4dc08d0a8c5ea44007462fe1fd8e45962d4ea85c420eab4140fbb30b5b5e111",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-				"ee3a91a06edc3ae9ad1957e7d424bbe61b08bda46b16044d1e4f552f74eedd64",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"b01975012df91d9f9f040c34655f23f3ec1f6d1738d85679e9848143756637c9",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-				"7cdc33783a2ba3b725f62ec0e45474121224b522b8714ccb94550abec583996a",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"eacd9e48d2e968131e48c8e69f2a211cc06c7778db6c5467348b45418fc7f585",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-				"930dc000b39defeed3c544afcb883b7107f407b8a0ffa817246ad3ddb31dc2af",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"00df670e8ec0751d3fb9b5f0281d0af9a7a82f62ad35a21247a9d6117daec151",
 			),
 			(
 				vec![0u8; 14],
-				"4810afdc177c150f85a768ba0a1e67c11af134e19086484b0c8b3cc4d3c3ad6f",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"d6182896f274c5d9640972e2bf2a5e893e516a21adfdd8ebd39969128d619934",
 			),
 			(
 				vec![0u8; 15],
-				"8a585b230a01bc576ea7150f87916eb92301b247bfeb9403f8bb896a6baa5e71",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"15fc2f3c3bc51c96797b889d4fecfcd3535b959f510c007598a87f099e356303",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 1u8],
-				"655cca1d2bc760e5c20978d2eb9e24a938e25fafbb0661b7994fa013e8bb2770",
+				"e7fc4ca465774d1aa97377c9c11af0e374d02cbe925a3fe5fd8c031db28c9b03",
 				"6ffff0c97262139567c426e916c1fd70c924010153c366bb2a8957ea89902942",
 			),
 			(
 				vec![1u8, 2, 3, 4, 5, 6, 7, 8],
-				"abf4f9bd2bd6ddc910e761cb7283494e882f11959ebec5647627ea2dd1b10e2d",
+				"1b34c6db4eae6950ad48a63d31f846a1e7d140e6ecccb50a712ce6a9d536e5da",
 				"131020b2e74819343f8568258ae2e9717e9b2253d57baabab78a518bc7499a8b",
 			),
 			(
 				vec![255u8; 32],
-				"edc6271851dff14c7b18aeb0e4b9c705c59fa803a1d01c07ca6546ea79f70d4d",
+				"4e6ec9a3d2beb1b978d38f6a5e0181d762a02e68a9647194a52b1db0cfa74985",
 				"41260a4322e97dc3dda2b5f70b5ffb1b43071ad5510e101f34209721042c0987",
 			),
 			(
 				b"hello world".to_vec(),
-				"9013fb736cc410773e81210af6682173cfca717c7be8c08f4766399074228db7",
+				"6c2f70750bd9ceafc7802e8bfd7f2e12ae018d55ba76c56cf5e5e2ca66381635",
 				"fd1f5d7d4701c25bbdd5dd6e3be6abb474fffbaa402f814dce95f8283abbf3e7",
 			),
 			(
 				(0u8..32).collect::<Vec<u8>>(),
-				"91eaaaae1fa9fa10b0f2da281183a4298fcc016206bc293db668e0d14e131add",
+				"9afdc770a4de1e6f6a5acdbce33c895608e0ef4e0df29c7dd3bb55166fc3aeb4",
 				"36884f9093be80632397f5736dce2fece627a4182daf3cdbf8bf12c8e3e02668",
 			),
 			(
 				(0u8..64).collect::<Vec<u8>>(),
-				"6db5aa1f6332498973890cb0538c09d8efc4c5f4ff229c422b945bca7ccc7bed",
+				"89fcde335d31dc115a79fa485352812f8d4ed3055ec9c1e297ac39bd93e9db3e",
 				"dd0d06fbe4e7575d0eeac53706482cbbe592e269a35bcd5591a495814371724e",
 			),
 		];

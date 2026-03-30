@@ -20,7 +20,7 @@ use p3_goldilocks::Goldilocks;
 use qp_poseidon_core::{
 	hash_for_circuit, hash_to_bytes,
 	serialization::{bytes_to_digest, u128_to_quantized_felt, u64_to_felts},
-	FIELD_ELEMENT_PREIMAGE_PADDING_LEN,
+	PROOF_NODE_MAX_SIZE_FELTS,
 };
 use scale_info::TypeInfo;
 use sp_core::{Hasher, H256};
@@ -171,7 +171,7 @@ impl PoseidonHasher {
 	/// Converts bytes to field elements (4 bytes per felt with terminator),
 	/// pads to a fixed number of elements, then hashes.
 	pub fn hash_for_circuit(x: &[u8]) -> [u8; 32] {
-		hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(x)
+		hash_for_circuit::<PROOF_NODE_MAX_SIZE_FELTS>(x)
 	}
 
 	/// Hash storage key or value.
@@ -244,7 +244,7 @@ mod tests {
 	#[test]
 	fn test_substrate_wrapper_compatibility() {
 		let input = b"test data";
-		let core_hash = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(input);
+		let core_hash = hash_for_circuit::<PROOF_NODE_MAX_SIZE_FELTS>(input);
 		let wrapper_hash = PoseidonHasher::hash_for_circuit(input);
 		assert_eq!(core_hash, wrapper_hash);
 	}
