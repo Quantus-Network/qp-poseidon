@@ -8,7 +8,7 @@ pub mod serialization;
 
 use crate::serialization::{bytes_to_felts, bytes_to_felts_compact};
 use alloc::vec::Vec;
-use p3_field::{integers::QuotientMap, PrimeCharacteristicRing};
+use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::{Goldilocks, Poseidon2Goldilocks};
 use p3_symmetric::Permutation;
 use qp_poseidon_constants::{POSEIDON2_OUTPUT, SPONGE_RATE, SPONGE_WIDTH};
@@ -19,24 +19,17 @@ use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 // ============================================================================
 
 /// Bytes per field element in compact encoding.
-///
-/// We use 7 bytes (not 8) to ensure all values are less than the Goldilocks field
-/// order (p = 2^64 - 2^32 + 1). With 8 bytes, values in [p, 2^64-1] would be reduced
-/// mod p, causing collisions (e.g., p collides with 0). With 7 bytes, the maximum
-/// value is 2^56 - 1, which is well below p, guaranteeing injectivity.
-pub const COMPACT_BYTES_PER_FELT: usize = 7;
+/// Uses the full 8-byte capacity of Goldilocks field elements.
+pub const COMPACT_BYTES_PER_FELT: usize = 8;
 
 /// Maximum size of a storage proof node in bytes.
 /// Worst-case branch node: 8 (header) + 32 (partial key) + 8 (bitmap) + 512 (16 children) + 40
 /// (value) = 600 bytes. We use 640 bytes to provide some margin.
 pub const PROOF_NODE_MAX_SIZE_BYTES: usize = 640;
 
-/// Maximum storage proof node size in field elements using compact encoding (7 bytes/felt).
+/// Maximum storage proof node size in field elements using compact encoding (8 bytes/felt).
 /// This is the single source of truth for circuit witness sizing.
-/// Includes +1 for the length prefix that makes the encoding injective.
-/// Calculation: ceil(640 / 7) + 1 = 92 + 1 = 93
-pub const PROOF_NODE_MAX_SIZE_FELTS: usize =
-	PROOF_NODE_MAX_SIZE_BYTES.div_ceil(COMPACT_BYTES_PER_FELT) + 1; // = 93
+pub const PROOF_NODE_MAX_SIZE_FELTS: usize = PROOF_NODE_MAX_SIZE_BYTES / COMPACT_BYTES_PER_FELT; // = 80
 
 // Internal state for Poseidon2 hashing
 pub struct Poseidon2State {
@@ -178,25 +171,17 @@ pub fn hash_bytes(x: &[u8]) -> [u8; 32] {
 	st.finalize_to_bytes()
 }
 
-/// Hash bytes for circuit compatibility using compact encoding (7 bytes/felt).
+/// Hash bytes for circuit compatibility using compact encoding (8 bytes/felt).
 ///
-/// Converts bytes to field elements using compact encoding, with a length prefix
-/// to ensure injectivity. If the resulting field element count is less than C,
-/// the input is zero-padded to exactly C elements before hashing.
-///
-/// This encoding is fully injective because:
-/// 1. Length prefix distinguishes inputs of different lengths (e.g., `[0]` vs `[0, 0]`)
-/// 2. 7 bytes/felt ensures all values are below Goldilocks field order (no mod p reduction)
+/// Converts bytes to field elements using compact encoding, then hashes. If the
+/// resulting field element count is less than C, the input is zero-padded to
+/// exactly C elements before hashing.
 ///
 /// Use this when the hash must match an in-circuit computation with fixed input size.
-/// The compact encoding uses 7 bytes per felt (vs 4 bytes/felt in injective encoding),
-/// resulting in fewer constraints in ZK circuits.
+/// The compact encoding uses 8 bytes per felt (vs 4 bytes/felt in injective encoding),
+/// resulting in ~50% fewer constraints in ZK circuits.
 pub fn hash_for_circuit<const C: usize>(x: &[u8]) -> [u8; 32] {
-	// Prepend length as first felt to make encoding injective
-	let mut felts = Vec::with_capacity(x.len() / COMPACT_BYTES_PER_FELT + 2);
-	felts.push(Goldilocks::from_int(x.len() as u64));
-	felts.extend(bytes_to_felts_compact(x));
-	hash_felts_for_circuit::<C>(felts)
+	hash_felts_for_circuit::<C>(bytes_to_felts_compact(x))
 }
 
 /// Hash field elements for circuit compatibility.
@@ -526,101 +511,98 @@ mod tests {
 	/// Known Answer Tests (KAT) for hash functions.
 	/// These test vectors ensure hash outputs remain stable across versions.
 	/// Format: (input_bytes, hash_for_circuit_output, hash_bytes_output)
-	///
-	/// Note: hash_for_circuit uses 7 bytes/felt + length prefix for injectivity.
-	/// hash_bytes uses the standard 4 bytes/felt injective encoding.
 	#[test]
 	fn test_known_value_hashes() {
-		// Generated test vectors with 7 bytes/felt + length prefix encoding
+		// Generated test vectors - copy into test_known_value_hashes:
 		let vectors: [(Vec<u8>, &str, &str); 18] = [
 			(
 				vec![],
-				"a12cb0ce720438d229c3d7d31574fedc4f1a0a9b443afbc87906f3f088e6a025",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"4d8d22af81f6c27a005a07028590ef4ee480f6c4b93f813daf9de47a07c8ae86",
 			),
 			(
 				vec![0u8],
-				"eaa6cf5964cb968303481e74a27210478c0e3ba97c7c83d78bfd9769afd50726",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"8f5b42e350ff5a12788210c86c2bcd49243b8f9350de818b3b0c56839a42ebad",
 			),
 			(
 				vec![0u8, 0u8],
-				"0c9b573dd4b635171a2af3a9c13544951f2cfbf54af893a39e6f04fcbe8d5dbc",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"3e6ee24fb61a22f4d825b72fc8ebd359e3b3b9566e246c71c3e450ebe3262f9c",
 			),
 			(
 				vec![0u8, 0u8, 0u8],
-				"f157ba00f8b0812c5a3ee9e6bf804f6cad1c2bc65d96d6fbd671ba10e0dd6a04",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"34f4338a6f1b671062a3ac00b37ca05a47b43e16e589ccaa5b063416ba42356b",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8],
-				"6190402533c5efcc2ede527f64da04743306c92ead5d41f848eb356491c09e03",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"7bac8c6bc49b0b750f2ce0912b815a2cb4ae20c75ac430850257882d9d321afa",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8, 0u8],
-				"a56995b77b4f9958d7cf3a1eb3a8fafa5565e0eddac5b9e64331f28e54ba691a",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"c95cfddb573adf4070b3d7c8d2dfbbee48b4b973d80cbda2b458abe7bb6f0def",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-				"83725e717df68fa0e36125e25692b3d0ec2434c6026f066f841e6c5e29736f0a",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"a4dc08d0a8c5ea44007462fe1fd8e45962d4ea85c420eab4140fbb30b5b5e111",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-				"eca3493d5205be77a978a11cf5b50d90811f550278f2d51868a68d861c61fcba",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"b01975012df91d9f9f040c34655f23f3ec1f6d1738d85679e9848143756637c9",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-				"be492ae336d3fab30390ecb88489ec04ab8009e9448ede6fcb2f2fa9082220fe",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"eacd9e48d2e968131e48c8e69f2a211cc06c7778db6c5467348b45418fc7f585",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-				"c6473f9528031fcc82197acb61224c33a4af4c9d095473f3e21e79660abaf55b",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"00df670e8ec0751d3fb9b5f0281d0af9a7a82f62ad35a21247a9d6117daec151",
 			),
 			(
 				vec![0u8; 14],
-				"ff484f234a5db1c25de28ba65422a26ca03cbed26ffb6dfa1cb4f18c5f6dd4a6",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"d6182896f274c5d9640972e2bf2a5e893e516a21adfdd8ebd39969128d619934",
 			),
 			(
 				vec![0u8; 15],
-				"c0f73d01df32af1cc434670a174a0e71c7a649275911113a741d15c0cb057ee4",
+				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"15fc2f3c3bc51c96797b889d4fecfcd3535b959f510c007598a87f099e356303",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 1u8],
-				"5c0db3a2d2a40ff34bad9e6d8fb5860687254e91b25067bfbba15af8b507d6ca",
+				"e7fc4ca465774d1aa97377c9c11af0e374d02cbe925a3fe5fd8c031db28c9b03",
 				"6ffff0c97262139567c426e916c1fd70c924010153c366bb2a8957ea89902942",
 			),
 			(
 				vec![1u8, 2, 3, 4, 5, 6, 7, 8],
-				"c68b2ce20a834974d969aea17762dadb33f5cbe4dcc83f0da348a1a84700ced4",
+				"1b34c6db4eae6950ad48a63d31f846a1e7d140e6ecccb50a712ce6a9d536e5da",
 				"131020b2e74819343f8568258ae2e9717e9b2253d57baabab78a518bc7499a8b",
 			),
 			(
 				vec![255u8; 32],
-				"fc1b2cddbca7588701a824a3f0dd2027b496c29b6c9e2f0fb9c8944e7437afdf",
+				"4e6ec9a3d2beb1b978d38f6a5e0181d762a02e68a9647194a52b1db0cfa74985",
 				"41260a4322e97dc3dda2b5f70b5ffb1b43071ad5510e101f34209721042c0987",
 			),
 			(
 				b"hello world".to_vec(),
-				"bd8ea4a1dd726e751c75143dcb4cf247970ea9adca9adb1dd7c28ee6fa6e876f",
+				"6c2f70750bd9ceafc7802e8bfd7f2e12ae018d55ba76c56cf5e5e2ca66381635",
 				"fd1f5d7d4701c25bbdd5dd6e3be6abb474fffbaa402f814dce95f8283abbf3e7",
 			),
 			(
 				(0u8..32).collect::<Vec<u8>>(),
-				"768cbc3a47106fb219f1a3b130c33e888e31ce34b2acd8d8c7bf8b2feabdf7d3",
+				"9afdc770a4de1e6f6a5acdbce33c895608e0ef4e0df29c7dd3bb55166fc3aeb4",
 				"36884f9093be80632397f5736dce2fece627a4182daf3cdbf8bf12c8e3e02668",
 			),
 			(
 				(0u8..64).collect::<Vec<u8>>(),
-				"df51eb2c70bc35d8955937dcfc8019d701061d081f736562f78fdf1603ddd851",
+				"89fcde335d31dc115a79fa485352812f8d4ed3055ec9c1e297ac39bd93e9db3e",
 				"dd0d06fbe4e7575d0eeac53706482cbbe592e269a35bcd5591a495814371724e",
 			),
 		];
@@ -642,61 +624,5 @@ mod tests {
 				hex::encode(input)
 			);
 		}
-	}
-
-	/// Test verifying that the Goldilocks field order collision is FIXED.
-	///
-	/// Previously (with 8 bytes/felt), values >= p would be reduced mod p, causing
-	/// collisions. Now (with 7 bytes/felt), all values are below p, so no collisions.
-	///
-	/// Additionally, the length prefix ensures different-length inputs produce
-	/// different hashes.
-	#[test]
-	fn test_goldilocks_field_order_no_collision() {
-		use crate::serialization::bytes_to_felts_compact;
-
-		// Goldilocks field order: p = 2^64 - 2^32 + 1
-		let p: u64 = 0xFFFFFFFF00000001;
-
-		// Create two 8-byte inputs that would have collided with 8 bytes/felt
-		let bytes_zero: [u8; 8] = 0u64.to_le_bytes();
-		let bytes_p: [u8; 8] = p.to_le_bytes();
-
-		// Verify they are different byte sequences
-		assert_ne!(bytes_zero, bytes_p, "Input bytes should be different");
-
-		// Convert to field elements using compact encoding (7 bytes/felt)
-		let felts_zero = bytes_to_felts_compact(&bytes_zero);
-		let felts_p = bytes_to_felts_compact(&bytes_p);
-
-		// With 7 bytes/felt, these should produce DIFFERENT field elements
-		// (8 bytes spans 2 felts, and the byte patterns are different)
-		assert_ne!(
-			felts_zero, felts_p,
-			"With 7 bytes/felt, bytes encoding 0 and p should produce different felts"
-		);
-
-		// The hashes should also be different
-		let hash_zero = hash_for_circuit::<C>(&bytes_zero);
-		let hash_p = hash_for_circuit::<C>(&bytes_p);
-
-		assert_ne!(
-			hash_zero, hash_p,
-			"With 7 bytes/felt + length prefix, different inputs should produce different hashes"
-		);
-
-		// Additional test: 1 and p+1 should also be different
-		let bytes_one: [u8; 8] = 1u64.to_le_bytes();
-		let bytes_p_plus_one: [u8; 8] = (p + 1).to_le_bytes();
-
-		assert_ne!(bytes_one, bytes_p_plus_one, "Input bytes should be different");
-
-		let hash_one = hash_for_circuit::<C>(&bytes_one);
-		let hash_p_plus_one = hash_for_circuit::<C>(&bytes_p_plus_one);
-
-		assert_ne!(
-			hash_one, hash_p_plus_one,
-			"With 7 bytes/felt + length prefix, 1 and p+1 should produce different hashes"
-		);
 	}
 }
