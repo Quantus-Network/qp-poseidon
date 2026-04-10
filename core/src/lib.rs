@@ -36,7 +36,7 @@ pub const PROOF_NODE_MAX_SIZE_BYTES: usize = 640;
 /// Includes +1 for the length prefix that makes the encoding injective.
 /// Calculation: ceil(640 / 7) + 1 = 92 + 1 = 93
 pub const PROOF_NODE_MAX_SIZE_FELTS: usize =
-	(PROOF_NODE_MAX_SIZE_BYTES + COMPACT_BYTES_PER_FELT - 1) / COMPACT_BYTES_PER_FELT + 1; // = 93
+	PROOF_NODE_MAX_SIZE_BYTES.div_ceil(COMPACT_BYTES_PER_FELT) + 1; // = 93
 
 // Internal state for Poseidon2 hashing
 pub struct Poseidon2State {

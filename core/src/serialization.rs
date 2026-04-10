@@ -274,12 +274,7 @@ where
 // Compact encoding (7 bytes/felt) for variable-length data
 // ============================================================================
 
-/// Bytes per field element in compact encoding.
-///
-/// We use 7 bytes to ensure all values are below the Goldilocks field order
-/// (p = 2^64 - 2^32 + 1 ≈ 1.8 × 10^19). With 7 bytes, max value is 2^56 - 1 ≈ 7.2 × 10^16,
-/// which is safely below p, preventing field reduction collisions.
-const COMPACT_BYTES: usize = 7;
+use crate::COMPACT_BYTES_PER_FELT;
 
 /// Convert variable-length bytes to field elements using compact encoding (7 bytes/felt).
 ///
@@ -313,18 +308,18 @@ pub fn bytes_to_u64s_compact(input: &[u8]) -> Vec<u64> {
 		return Vec::new();
 	}
 
-	let num_elements = input.len().div_ceil(COMPACT_BYTES);
-	let padded_len = num_elements * COMPACT_BYTES;
+	let num_elements = input.len().div_ceil(COMPACT_BYTES_PER_FELT);
+	let padded_len = num_elements * COMPACT_BYTES_PER_FELT;
 
 	let mut padded = Vec::with_capacity(padded_len);
 	padded.extend_from_slice(input);
 	padded.resize(padded_len, 0u8);
 
 	let mut out = Vec::with_capacity(num_elements);
-	for chunk in padded.chunks_exact(COMPACT_BYTES) {
+	for chunk in padded.chunks_exact(COMPACT_BYTES_PER_FELT) {
 		// Convert 7 bytes to u64 (little-endian, high byte is 0)
 		let mut bytes = [0u8; 8];
-		bytes[..COMPACT_BYTES].copy_from_slice(chunk);
+		bytes[..COMPACT_BYTES_PER_FELT].copy_from_slice(chunk);
 		out.push(u64::from_le_bytes(bytes));
 	}
 
