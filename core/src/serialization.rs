@@ -271,48 +271,55 @@ where
 }
 
 // ============================================================================
-// Compact encoding (8 bytes/felt) for variable-length data
+// Compact encoding (7 bytes/felt) for variable-length data
 // ============================================================================
 
-/// Convert variable-length bytes to field elements using compact encoding (8 bytes/felt).
+use crate::COMPACT_BYTES_PER_FELT;
+
+/// Convert variable-length bytes to field elements using compact encoding (7 bytes/felt).
 ///
-/// Unlike `bytes_to_felts` (4 bytes/felt + terminator), this uses the full
-/// 8-byte capacity of each Goldilocks field element. Input is zero-padded to
-/// align to 8 bytes.
+/// Unlike `bytes_to_felts` (4 bytes/felt + terminator), this packs 7 bytes into each
+/// Goldilocks field element. Input is zero-padded to align to 7 bytes.
+///
+/// We use 7 bytes (not 8) to ensure all values are less than the Goldilocks field
+/// order (p = 2^64 - 2^32 + 1). With 8 bytes, values >= p would be reduced mod p,
+/// causing collisions (e.g., byte encoding of p would equal 0).
 ///
 /// **Note:** This encoding is NOT injective for variable-length data (inputs of
-/// different lengths could produce the same felts if padding aligns). Use only when:
-/// - The input length is fixed/known, OR
-/// - Collision resistance is provided by other means (e.g., trie structure)
+/// different lengths could produce the same felts if padding aligns). The caller
+/// must prepend a length field to ensure injectivity.
 ///
 /// # Example
 /// ```
 /// use qp_poseidon_core::serialization::bytes_to_felts_compact;
-/// let felts = bytes_to_felts_compact(b"hello world!"); // 12 bytes -> 2 felts
+/// let felts = bytes_to_felts_compact(b"hello world!!"); // 13 bytes -> 2 felts
 /// assert_eq!(felts.len(), 2);
 /// ```
 pub fn bytes_to_felts_compact(input: &[u8]) -> Vec<Goldilocks> {
 	bytes_to_u64s_compact(input).into_iter().map(from_u64).collect()
 }
 
-/// Convert variable-length bytes to u64 values using compact encoding (8 bytes per element).
+/// Convert variable-length bytes to u64 values using compact encoding (7 bytes per element).
 ///
-/// Input is zero-padded to align to 8 bytes.
+/// Input is zero-padded to align to 7 bytes. Each 7-byte chunk is converted to a u64
+/// using little-endian byte order (with the high byte always 0).
 pub fn bytes_to_u64s_compact(input: &[u8]) -> Vec<u64> {
 	if input.is_empty() {
 		return Vec::new();
 	}
 
-	let padded_len = input.len().div_ceil(8) * 8;
-	let num_elements = padded_len / 8;
+	let num_elements = input.len().div_ceil(COMPACT_BYTES_PER_FELT);
+	let padded_len = num_elements * COMPACT_BYTES_PER_FELT;
 
 	let mut padded = Vec::with_capacity(padded_len);
 	padded.extend_from_slice(input);
 	padded.resize(padded_len, 0u8);
 
 	let mut out = Vec::with_capacity(num_elements);
-	for chunk in padded.chunks_exact(8) {
-		let bytes: [u8; 8] = chunk.try_into().expect("chunk is 8 bytes");
+	for chunk in padded.chunks_exact(COMPACT_BYTES_PER_FELT) {
+		// Convert 7 bytes to u64 (little-endian, high byte is 0)
+		let mut bytes = [0u8; 8];
+		bytes[..COMPACT_BYTES_PER_FELT].copy_from_slice(chunk);
 		out.push(u64::from_le_bytes(bytes));
 	}
 
@@ -452,27 +459,29 @@ mod tests {
 		let empty: [u8; 0] = [];
 		assert_eq!(bytes_to_felts_compact(&empty).len(), 0);
 
-		// 1-8 bytes -> 1 felt
+		// 1-7 bytes -> 1 felt (7 bytes per felt)
 		assert_eq!(bytes_to_felts_compact(&[1u8]).len(), 1);
-		assert_eq!(bytes_to_felts_compact(&[1u8; 8]).len(), 1);
+		assert_eq!(bytes_to_felts_compact(&[1u8; 7]).len(), 1);
 
-		// 9-16 bytes -> 2 felts
-		assert_eq!(bytes_to_felts_compact(&[1u8; 9]).len(), 2);
-		assert_eq!(bytes_to_felts_compact(&[1u8; 16]).len(), 2);
+		// 8-14 bytes -> 2 felts
+		assert_eq!(bytes_to_felts_compact(&[1u8; 8]).len(), 2);
+		assert_eq!(bytes_to_felts_compact(&[1u8; 14]).len(), 2);
 
-		// 32 bytes -> 4 felts (same as POSEIDON2_OUTPUT)
-		assert_eq!(bytes_to_felts_compact(&[1u8; 32]).len(), 4);
+		// 32 bytes -> 5 felts (ceil(32/7) = 5)
+		assert_eq!(bytes_to_felts_compact(&[1u8; 32]).len(), 5);
 	}
 
 	#[test]
 	fn test_bytes_to_felts_compact_content() {
-		// Verify the encoding is correct
-		let input = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+		// Verify the encoding is correct (7 bytes per felt)
+		let input = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07];
 		let felts = bytes_to_felts_compact(&input);
 		assert_eq!(felts.len(), 1);
 
-		// Should be little-endian u64
-		let expected = u64::from_le_bytes(input);
+		// Should be little-endian u64 with high byte = 0
+		let mut bytes = [0u8; 8];
+		bytes[..7].copy_from_slice(&input);
+		let expected = u64::from_le_bytes(bytes);
 		assert_eq!(felts[0], Goldilocks::from_int(expected));
 	}
 
@@ -483,8 +492,8 @@ mod tests {
 		let compact = bytes_to_felts_compact(&input);
 		let injective = bytes_to_felts(&input);
 
-		// 32 bytes: compact = 4 felts, injective = 9 felts (8 data + 1 terminator)
-		assert_eq!(compact.len(), 4);
+		// 32 bytes: compact = 5 felts (ceil(32/7)), injective = 9 felts (8 data + 1 terminator)
+		assert_eq!(compact.len(), 5);
 		assert_eq!(injective.len(), 9);
 	}
 }
