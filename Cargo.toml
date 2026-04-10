@@ -6,7 +6,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.4.0"
+version = "1.5.0"
 authors = ["Quantus Network Developers <hello@quantus.com>"]
 homepage = "https://quantus.com"
 repository = "https://github.com/Quantus-Network/qp-poseidon"
@@ -26,7 +26,7 @@ p3-poseidon2 = { version = "0.3.0", default-features = false }
 p3-symmetric = { version = "0.3.0", default-features = false }
 # Git dep until new constants (SPONGE_WIDTH, SPONGE_RATE, POSEIDON2_OUTPUT) are published
 qp-poseidon-constants = { version = "1.1.0", default-features = false }
-qp-poseidon-core = { version = "1.4.0", path = "./core", default-features = false }
+qp-poseidon-core = { version = "1.5.0", path = "./core", default-features = false }
 rand = { version = "0.9", default-features = false, features = ["small_rng"] }
 rand_chacha = { version = "0.9", default-features = false }
 scale-info = { version = "2.11.1", default-features = false, features = ["derive"] }
