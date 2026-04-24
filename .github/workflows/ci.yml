@@ -30,8 +30,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install required components
-        run: rustup component add rustfmt --toolchain nightly
+      - name: Setup Rust toolchain (pinned via rust-toolchain)
+        run: |
+          rustup show active-toolchain || rustup show
+          rustup component add rustfmt --toolchain nightly
       - name: Install taplo
         run: cargo install taplo-cli --locked
       - name: Run format checks
@@ -62,6 +64,11 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           brew install protobuf
+      - name: Setup Rust toolchain (pinned via rust-toolchain)
+        run: |
+          rustup show active-toolchain || rustup show
+          rustc --version
+          cargo --version
       - name: Build
         run: cargo build --locked --release
       - name: Test
@@ -73,14 +80,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust
+      - name: Install system dependencies
         run: |
           sudo apt-get update -yqq
           sudo apt-get install -yqq --no-install-recommends \
             libclang-dev \
             protobuf-compiler
-      - name: Install required components
-        run: rustup component add rust-src clippy
+      - name: Setup Rust toolchain (pinned via rust-toolchain)
+        run: |
+          rustup show active-toolchain || rustup show
+          rustup component add rust-src clippy
+          rustc --version
+          cargo --version
       - name: Run clippy
         run: cargo clippy --locked -- -D warnings
       - name: Run doc

@@ -63,8 +63,12 @@ jobs:
         with:
           ref: ${{ needs.create-tag.outputs.version }}
 
-      - name: Install required components
-        run: rustup component add rustfmt --toolchain nightly
+      - name: Setup Rust toolchain (pinned via rust-toolchain)
+        run: |
+          rustup show active-toolchain || rustup show
+          rustup component add rustfmt --toolchain nightly
+          rustc --version
+          cargo --version
 
       - name: Install taplo
         run: cargo install taplo-cli --locked
@@ -91,8 +95,12 @@ jobs:
             libclang-dev \
             protobuf-compiler
 
-      - name: Install required components
-        run: rustup component add rust-src clippy
+      - name: Setup Rust toolchain (pinned via rust-toolchain)
+        run: |
+          rustup show active-toolchain || rustup show
+          rustup component add rust-src clippy
+          rustc --version
+          cargo --version
 
       - name: Build
         run: cargo build --locked --release
