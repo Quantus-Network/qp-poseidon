@@ -1,5 +1,11 @@
 name: Create Release Tag & Publish
 
+# Default least-privilege permissions for all jobs in this workflow.
+# Jobs that need write access (e.g. tag push, GitHub release) override
+# this with their own `permissions:` block.
+permissions:
+  contents: read
+
 env:
   CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always

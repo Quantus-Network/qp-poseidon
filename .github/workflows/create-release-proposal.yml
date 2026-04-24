@@ -1,5 +1,11 @@
 name: Create Release Proposal
 
+# Default least-privilege permissions for all jobs in this workflow.
+# Jobs that need write access (e.g. branch push + PR creation) override
+# this with their own `permissions:` block.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
