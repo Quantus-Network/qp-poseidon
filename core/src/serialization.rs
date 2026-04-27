@@ -322,7 +322,7 @@ pub fn bytes_to_u64s_compact(input: &[u8]) -> Vec<u64> {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use alloc::{format, vec};
+	use alloc::vec;
 
 	#[test]
 	fn test_u64_round_trip() {
@@ -338,8 +338,8 @@ mod tests {
 
 		for &original in &test_values {
 			let felts = u64_to_felts(original);
-			let reconstructed =
-				try_felts_to_u64(felts).expect(&format!("Failed for input: {}", original));
+			let reconstructed = try_felts_to_u64(felts)
+				.unwrap_or_else(|_| panic!("Failed for input: {}", original));
 			assert_eq!(original, reconstructed);
 		}
 	}
@@ -351,8 +351,8 @@ mod tests {
 
 		for &original in &test_values {
 			let felts = u128_to_felts(original);
-			let reconstructed =
-				try_felts_to_u128(felts).expect(&format!("Failed for input: {}", original));
+			let reconstructed = try_felts_to_u128(felts)
+				.unwrap_or_else(|_| panic!("Failed for input: {}", original));
 			assert_eq!(original, reconstructed);
 		}
 	}

@@ -8,6 +8,14 @@
 //! - Class B: Random data
 //!
 //! This ensures the two classes are distinguishable before timing analysis begins.
+//!
+//! In `cfg(test)` builds the `dudect_bencher::ctbench_main!` macro is gated out
+//! (it is `cfg(all(not(test), feature = "dudect-bencher"))`), so every helper
+//! would be reported as dead code under `cargo clippy --all-targets`. The
+//! binary is only meaningful in non-test mode anyway, so skip the file under
+//! `cfg(test)`.
+
+#![cfg(not(test))]
 
 #[cfg(feature = "dudect-bencher")]
 use dudect_bencher::rand::{Rng, RngCore};
@@ -261,9 +269,9 @@ fn test_poseidon2_permutation_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 			Class::Left => fixed_state,
 			Class::Right => {
 				let mut random_state = [Goldilocks::ZERO; 12];
-				for i in 0..12 {
+				for slot in &mut random_state {
 					let val = rng.next_u64() % Goldilocks::ORDER_U64;
-					random_state[i] = Goldilocks::from_int(val);
+					*slot = Goldilocks::from_int(val);
 				}
 				random_state
 			},

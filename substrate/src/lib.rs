@@ -227,13 +227,9 @@ impl sp_runtime::traits::Hash for PoseidonHasher {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use hex;
 	use qp_poseidon_constants::POSEIDON2_OUTPUT;
 	use qp_poseidon_core::serialization::bytes_to_felts;
 	use scale_info::prelude::vec;
-
-	#[cfg(feature = "std")]
-	use env_logger;
 
 	#[cfg(all(feature = "std", test))]
 	#[ctor::ctor]
@@ -290,8 +286,8 @@ mod tests {
 		let current_hash = PoseidonHasher::hash_for_circuit(&input);
 
 		for _ in 0..iterations {
-			let hash1 = PoseidonHasher::hash_for_circuit((&current_hash).as_ref());
-			let current_hash = PoseidonHasher::hash_for_circuit((&current_hash).as_ref());
+			let hash1 = PoseidonHasher::hash_for_circuit(current_hash.as_ref());
+			let current_hash = PoseidonHasher::hash_for_circuit(current_hash.as_ref());
 			assert_eq!(hash1, current_hash, "Hash function should be deterministic");
 		}
 	}
@@ -331,7 +327,7 @@ mod tests {
 	fn test_circuit_preimage() {
 		let preimage =
 			hex::decode("afd8e7530b95ee5ebab950c9a0c62fae1e80463687b3982233028e914f8ec7cc");
-		let hash = PoseidonHasher::hash_for_circuit(&*preimage.unwrap());
+		let hash = PoseidonHasher::hash_for_circuit(&preimage.unwrap());
 		let _hash = PoseidonHasher::hash_for_circuit(hash.as_slice());
 	}
 
@@ -352,7 +348,7 @@ mod tests {
 		for hex_string in hex_strings.iter() {
 			let preimage = hex::decode(hex_string).unwrap();
 			let hash = PoseidonHasher::hash_for_circuit(&preimage);
-			let _hash2 = PoseidonHasher::hash_for_circuit(&hash.as_slice());
+			let _hash2 = PoseidonHasher::hash_for_circuit(hash.as_slice());
 		}
 	}
 
