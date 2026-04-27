@@ -9,7 +9,8 @@ permissions:
 env:
   CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CARGO_NET_RETRY: 10
+  CARGO_NET_TIMEOUT: 60
 
 on:
   pull_request:
@@ -22,6 +23,7 @@ jobs:
     name: Create Tag
     if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'release-proposal')
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     outputs:
@@ -29,7 +31,7 @@ jobs:
       is_draft: ${{ steps.extract_version.outputs.is_draft }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -63,18 +65,14 @@ jobs:
     name: 🏁 Format Checks
     needs: create-tag
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout code at tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ needs.create-tag.outputs.version }}
 
-      - name: Setup Rust toolchain (pinned via rust-toolchain)
-        run: |
-          rustup show active-toolchain || rustup show
-          rustup component add rustfmt --toolchain nightly
-          rustc --version
-          cargo --version
+      - uses: ./.github/actions/ubuntu
 
       - name: Install taplo
         run: cargo install taplo-cli --locked
@@ -88,25 +86,25 @@ jobs:
     name: 🛠️ Build & Test
     needs: [create-tag, format-checks]
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout code at tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ needs.create-tag.outputs.version }}
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update -yqq
-          sudo apt-get install -yqq --no-install-recommends \
-            libclang-dev \
-            protobuf-compiler
+      - uses: ./.github/actions/ubuntu
 
-      - name: Setup Rust toolchain (pinned via rust-toolchain)
-        run: |
-          rustup show active-toolchain || rustup show
-          rustup component add rust-src clippy
-          rustc --version
-          cargo --version
+      - name: Cache cargo registry & target
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-release-${{ needs.create-tag.outputs.version }}-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-
 
       - name: Build
         run: cargo build --locked --release
@@ -114,25 +112,31 @@ jobs:
       - name: Test
         run: cargo test --locked --release
 
-      - name: Run clippy
-        run: cargo clippy --locked -- -D warnings
+      - name: Run clippy (workspace, all targets, all features)
+        run: cargo clippy --workspace --all-targets --all-features --locked --release -- -D warnings
 
-      - name: Build docs
-        run: cargo doc --locked --no-deps
+      - name: Build docs (workspace)
+        run: cargo doc --workspace --locked --no-deps --all-features --release
 
   create-github-release:
     name: 🚀 Create GitHub Release
     needs: [create-tag, build-and-test]
     if: always() && needs.build-and-test.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.create-tag.outputs.version }}
           fetch-depth: 0
           fetch-tags: true
+
+      # `cargo publish` needs the toolchain pinned in rust-toolchain.toml to be
+      # actually installed on the runner; the composite action handles that
+      # (rustup >=1.28 no longer auto-installs the active toolchain).
+      - uses: ./.github/actions/ubuntu
 
       - name: Create GitHub Release (no binaries)
         env:
@@ -172,5 +176,3 @@ jobs:
         run: cargo publish --package qp-poseidon --token ${{ secrets.CARGO_REGISTRY_TOKEN }} --allow-dirty
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-

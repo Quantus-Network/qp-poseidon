@@ -8,7 +8,8 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CARGO_NET_RETRY: 10
+  CARGO_NET_TIMEOUT: 60
 
 on:
   workflow_dispatch:
@@ -41,13 +42,14 @@ jobs:
   calculate-next-version:
     name: 🧮 Calculate Next Version
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       new_version: ${{ steps.versioner.outputs.new_version }}
       commit_sha_short: ${{ steps.vars.outputs.commit_sha_short }}
       source_branch: ${{ steps.vars.outputs.source_branch }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -120,11 +122,12 @@ jobs:
     name: 📝 Update version files
     needs: calculate-next-version
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 

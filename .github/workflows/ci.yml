@@ -27,18 +27,17 @@ permissions:
 env:
   CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CARGO_NET_RETRY: 10
+  CARGO_NET_TIMEOUT: 60
 
 jobs:
   fast-checks:
     name: 🏁 Fast Checks (Format)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup Rust toolchain (pinned via rust-toolchain)
-        run: |
-          rustup show active-toolchain || rustup show
-          rustup component add rustfmt --toolchain nightly
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/ubuntu
       - name: Install taplo
         run: cargo install taplo-cli --locked
       - name: Run format checks
@@ -50,6 +49,7 @@ jobs:
     name: 🛠️ Build & Test Matrix
     needs: fast-checks
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: true
       matrix:
@@ -57,23 +57,23 @@ jobs:
           - ubuntu-latest
           - macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Install dependencies (Ubuntu)
+      - uses: actions/checkout@v5
+      - name: Setup Ubuntu
         if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update -yqq
-          sudo apt-get install -yqq --no-install-recommends \
-            libclang-dev \
-            protobuf-compiler
-      - name: Install dependencies (macOS)
+        uses: ./.github/actions/ubuntu
+      - name: Setup macOS
         if: matrix.os == 'macos-latest'
-        run: |
-          brew install protobuf
-      - name: Setup Rust toolchain (pinned via rust-toolchain)
-        run: |
-          rustup show active-toolchain || rustup show
-          rustc --version
-          cargo --version
+        uses: ./.github/actions/macos
+      - name: Cache cargo registry & target
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-
       - name: Build
         run: cargo build --locked --release
       - name: Test
@@ -83,44 +83,40 @@ jobs:
     name: 🤖 Analysis (Clippy & Doc)
     needs: fast-checks
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update -yqq
-          sudo apt-get install -yqq --no-install-recommends \
-            libclang-dev \
-            protobuf-compiler
-      - name: Setup Rust toolchain (pinned via rust-toolchain)
-        run: |
-          rustup show active-toolchain || rustup show
-          rustup component add rust-src clippy
-          rustc --version
-          cargo --version
-      - name: Run clippy
-        run: cargo clippy --locked -- -D warnings
-      - name: Run doc
-        run: cargo doc --locked --no-deps
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/ubuntu
+      - name: Cache cargo registry & target
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-analysis-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-analysis-
+      - name: Run clippy (workspace, all targets, all features)
+        run: cargo clippy --workspace --all-targets --all-features --locked --release -- -D warnings
+      - name: Generate documentation (workspace)
+        run: cargo doc --workspace --locked --no-deps --all-features --release
 
   security-audit:
     name: 🔐 Security Audit (non-blocking)
     needs: fast-checks
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup Rust toolchain (pinned via rust-toolchain)
-        run: |
-          rustup show active-toolchain || rustup show
-          rustc --version
-          cargo --version
+      - uses: actions/checkout@v5
       - name: Cache cargo-audit binary
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cargo/bin/cargo-audit
-          key: cargo-audit-bin-${{ runner.os }}
+          key: cargo-audit-bin-${{ runner.os }}-0.22.1
       - name: Cache RustSec advisory database
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cargo/advisory-db
           key: cargo-advisory-db-${{ runner.os }}-${{ github.run_id }}
@@ -129,7 +125,7 @@ jobs:
       - name: Install cargo-audit
         run: |
           if ! command -v cargo-audit >/dev/null 2>&1; then
-            cargo install cargo-audit --locked
+            cargo install cargo-audit --locked --version 0.22.1
           fi
       - name: Run cargo audit (informational only)
         run: cargo audit
