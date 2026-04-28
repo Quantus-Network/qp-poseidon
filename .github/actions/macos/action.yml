@@ -7,7 +7,10 @@ runs:
   steps:
     - name: rust compilation prerequisites (macos)
       run: |
-        brew update
+        # `brew update` is intentionally non-fatal: it occasionally fails on
+        # transient tap/network errors, and we don't want it to short-circuit
+        # the retry loop below before `brew install` even gets a chance.
+        brew update || echo "::warning::brew update failed (non-fatal), continuing"
         OK=0
         for i in 1 2 3; do
           if brew install protobuf llvm; then OK=1; break; fi
@@ -18,10 +21,10 @@ runs:
         # Unconditionally install the toolchain pinned in rust-toolchain.toml
         # (rustup >=1.28 no longer auto-installs the active toolchain, and
         # `rustup update` only refreshes already-installed toolchains).
-        # This installs the channel + every component/target listed in the file.
+        # This installs the channel + every component/target listed in the file
+        # (no extra `rustup target add` needed — the workspace doesn't compile
+        # to any wasm target in CI anyway).
         rustup toolchain install
-        rustup target add wasm32-unknown-unknown
-        rustup component add rustfmt --toolchain nightly
         rustup component add clippy rust-src
         rustc --version
         cargo --version

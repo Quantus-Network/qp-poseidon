@@ -15,9 +15,13 @@ runs:
         # Unconditionally install the toolchain pinned in rust-toolchain.toml
         # (rustup >=1.28 no longer auto-installs the active toolchain, and
         # `rustup update` only refreshes already-installed toolchains).
-        # This installs the channel + every component/target listed in the file.
+        # This installs the channel + every component/target listed in the file
+        # (no extra `rustup target add` needed — the workspace doesn't compile
+        # to any wasm target in CI anyway).
         rustup toolchain install
-        rustup target add wasm32-unknown-unknown
+        # `cargo +nightly fmt` is used by the fast-checks job (ubuntu-only),
+        # so we need rustfmt for the nightly toolchain preinstalled on the
+        # runner. clippy/rust-src are for the pinned stable toolchain.
         rustup component add rustfmt --toolchain nightly
         rustup component add clippy rust-src
         rustc --version
