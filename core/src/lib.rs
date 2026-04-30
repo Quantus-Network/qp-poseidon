@@ -234,7 +234,6 @@ mod tests {
 	use super::*;
 	use crate::alloc::string::ToString;
 	use alloc::{format, vec};
-	use hex;
 	use p3_field::PrimeField64;
 
 	const C: usize = PROOF_NODE_MAX_SIZE_FELTS;
@@ -608,7 +607,7 @@ mod tests {
 		];
 
 		for (input, expected_circuit, expected_bytes) in vectors.iter() {
-			let circuit_hash = hash_for_circuit::<C>(&input);
+			let circuit_hash = hash_for_circuit::<C>(input);
 			assert_eq!(
 				hex::encode(circuit_hash),
 				*expected_circuit,
@@ -616,7 +615,7 @@ mod tests {
 				hex::encode(input)
 			);
 
-			let bytes_hash = hash_bytes(&input);
+			let bytes_hash = hash_bytes(input);
 			assert_eq!(
 				hex::encode(bytes_hash),
 				*expected_bytes,

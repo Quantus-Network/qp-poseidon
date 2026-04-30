@@ -1,0 +1,52 @@
+---
+name: macos dependencies
+description: installs dependencies required to compile the workspace on macos
+
+runs:
+  using: composite
+  steps:
+    - name: rust compilation prerequisites (macos)
+      run: |
+        # `brew update` is intentionally non-fatal: it occasionally fails on
+        # transient tap/network errors, and we don't want it to short-circuit
+        # the retry loop below before `brew install` even gets a chance.
+        brew update || echo "::warning::brew update failed (non-fatal), continuing"
+        OK=0
+        for i in 1 2 3; do
+          if brew install protobuf llvm; then OK=1; break; fi
+          echo "brew install attempt $i failed (often transient ghcr.io), retrying in 15s..."
+          sleep 15
+        done
+        if [ "$OK" -ne 1 ]; then echo "::error::brew install protobuf llvm failed after 3 attempts"; exit 1; fi
+        # Unconditionally install the toolchain pinned in rust-toolchain.toml
+        # (rustup >=1.28 no longer auto-installs the active toolchain, and
+        # `rustup update` only refreshes already-installed toolchains).
+        # This installs the channel + every component/target listed in the file
+        # (no extra `rustup target add` needed — the workspace doesn't compile
+        # to any wasm target in CI anyway).
+        rustup toolchain install
+        rustup component add clippy rust-src
+        rustc --version
+        cargo --version
+      shell: bash
+    - name: Set LIBCLANG_PATH for clang-sys (bindgen/rocksdb etc.)
+      run: |
+        # Homebrew LLVM provides libclang.dylib; clang-sys looks for libclang.dylib.
+        # ARM (Apple Silicon): /opt/homebrew/opt/llvm/lib
+        # x86 (Intel):         /usr/local/opt/llvm/lib
+        DIR=
+        if command -v brew >/dev/null 2>&1; then
+          PREFIX="$(brew --prefix llvm 2>/dev/null)"
+          [ -n "$PREFIX" ] && [ -d "$PREFIX/lib" ] && ls "$PREFIX/lib"/libclang*.dylib 1>/dev/null 2>&1 && DIR="$PREFIX/lib"
+        fi
+        if [ -z "$DIR" ] && [ -d /usr/local/opt/llvm/lib ] && ls /usr/local/opt/llvm/lib/libclang*.dylib 1>/dev/null 2>&1; then
+          DIR=/usr/local/opt/llvm/lib
+        fi
+        if [ -z "$DIR" ] && [ -d /opt/homebrew/opt/llvm/lib ] && ls /opt/homebrew/opt/llvm/lib/libclang*.dylib 1>/dev/null 2>&1; then
+          DIR=/opt/homebrew/opt/llvm/lib
+        fi
+        if [ -n "$DIR" ]; then
+          echo "LIBCLANG_PATH=$DIR" >> $GITHUB_ENV
+        fi
+        echo "LIBCLANG_PATH=${LIBCLANG_PATH:-not set}"
+      shell: bash
