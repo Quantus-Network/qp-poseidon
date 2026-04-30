@@ -107,7 +107,6 @@ jobs:
     needs: fast-checks
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v5
       - name: Cache cargo-audit binary
@@ -128,4 +127,8 @@ jobs:
             cargo install cargo-audit --locked --version 0.22.1
           fi
       - name: Run cargo audit (informational only)
+        # Only this step is non-blocking — every other step in this job
+        # (checkout, caches, cargo-audit install) must fail loudly so we
+        # don't silently skip the audit.
+        continue-on-error: true
         run: cargo audit
