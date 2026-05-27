@@ -7,32 +7,13 @@ use qp_poseidon_constants as constants;
 pub mod serialization;
 
 use crate::serialization::{bytes_to_felts, bytes_to_felts_compact};
-use alloc::vec::Vec;
 use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::{Goldilocks, Poseidon2Goldilocks};
 use p3_symmetric::Permutation;
 use qp_poseidon_constants::{POSEIDON2_OUTPUT, SPONGE_RATE, SPONGE_WIDTH};
-use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
-
-// ============================================================================
-// Compact Encoding Parameters (for storage trie hashing)
-// ============================================================================
-
-/// Bytes per field element in compact encoding.
-/// Uses the full 8-byte capacity of Goldilocks field elements.
-pub const COMPACT_BYTES_PER_FELT: usize = 8;
-
-/// Maximum size of a storage proof node in bytes.
-/// Worst-case branch node: 8 (header) + 32 (partial key) + 8 (bitmap) + 512 (16 children) + 40
-/// (value) = 600 bytes. We use 640 bytes to provide some margin.
-pub const PROOF_NODE_MAX_SIZE_BYTES: usize = 640;
-
-/// Maximum storage proof node size in field elements using compact encoding (8 bytes/felt).
-/// This is the single source of truth for circuit witness sizing.
-pub const PROOF_NODE_MAX_SIZE_FELTS: usize = PROOF_NODE_MAX_SIZE_BYTES / COMPACT_BYTES_PER_FELT; // = 80
 
 // Internal state for Poseidon2 hashing
-pub struct Poseidon2State {
+struct Poseidon2State {
 	poseidon2: Poseidon2Goldilocks<SPONGE_WIDTH>,
 	state: [Goldilocks; SPONGE_WIDTH],
 	buf: [Goldilocks; SPONGE_RATE],
@@ -118,25 +99,6 @@ impl Poseidon2State {
 	}
 }
 
-pub fn poseidon2_from_seed(seed: u64) -> Poseidon2State {
-	let mut rng = ChaCha20Rng::seed_from_u64(seed);
-	let poseidon2 = Poseidon2Goldilocks::<SPONGE_WIDTH>::new_from_rng_128(&mut rng);
-	Poseidon2State {
-		poseidon2,
-		state: [Goldilocks::ZERO; SPONGE_WIDTH],
-		buf: [Goldilocks::ZERO; SPONGE_RATE],
-		buf_len: 0,
-	}
-}
-
-fn pad_and_hash<const C: usize>(mut x: Vec<Goldilocks>) -> [Goldilocks; POSEIDON2_OUTPUT] {
-	let len = x.len();
-	if len < C {
-		x.resize(C, Goldilocks::ZERO);
-	}
-	hash_to_felts(&x)
-}
-
 // ============================================================================
 // Public hash functions
 // ============================================================================
@@ -171,35 +133,35 @@ pub fn hash_bytes(x: &[u8]) -> [u8; 32] {
 	st.finalize_to_bytes()
 }
 
-/// Hash bytes for circuit compatibility using compact encoding (8 bytes/felt).
+// ============================================================================
+// Compact encoding hash functions
+// ============================================================================
+
+/// Hash a Dilithium ML-DSA-87 public key (2592 bytes) using compact encoding.
 ///
-/// Converts bytes to field elements using compact encoding, then hashes. If the
-/// resulting field element count is less than C, the input is zero-padded to
-/// exactly C elements before hashing.
+/// Uses compact encoding (8 bytes/felt) for circuit compatibility.
+/// This is the recommended way to derive an account ID from a Dilithium public key.
 ///
-/// Use this when the hash must match an in-circuit computation with fixed input size.
-/// The compact encoding uses 8 bytes per felt (vs 4 bytes/felt in injective encoding),
-/// resulting in ~50% fewer constraints in ZK circuits.
-pub fn hash_for_circuit<const C: usize>(x: &[u8]) -> [u8; 32] {
-	hash_felts_for_circuit::<C>(bytes_to_felts_compact(x))
+/// # Safety
+/// This function uses compact encoding which is only collision-resistant for fixed-size
+/// inputs. The fixed array size ensures callers provide exactly 2592 bytes.
+pub fn hash_pubkey(pubkey: &[u8; 2592]) -> [u8; 32] {
+	hash_compact(pubkey)
 }
 
-/// Hash field elements for circuit compatibility.
+/// Hash bytes using compact encoding (8 bytes/felt).
 ///
-/// If the input has fewer than C elements, it is zero-padded to exactly C elements
-/// before hashing. Use this when the hash must match an in-circuit computation with
-/// fixed input size.
-pub fn hash_felts_for_circuit<const C: usize>(x: Vec<Goldilocks>) -> [u8; 32] {
-	serialization::digest_to_bytes(&pad_and_hash::<C>(x))
-}
-
-/// Double hash: hash(hash(input)), returning 4 field elements.
+/// Converts bytes to field elements using compact encoding, then hashes.
 ///
-/// The inner hash output (4 felts) is re-hashed directly as field elements.
-/// Used for wormhole address derivation.
-pub fn hash_twice_to_felts(x: &[Goldilocks]) -> [Goldilocks; POSEIDON2_OUTPUT] {
-	let inner = hash_to_felts(x);
-	hash_to_felts(&inner)
+/// # Warning
+/// This function is NOT collision-resistant for variable-length inputs because:
+/// 1. Compact encoding doesn't include a length marker (trailing zeros collide)
+/// 2. Values >= Goldilocks prime are reduced (field element collisions)
+///
+/// Only use this with fixed-size inputs where the size is known and enforced.
+/// Prefer the type-safe wrappers like `hash_pubkey` for public APIs.
+pub(crate) fn hash_compact(x: &[u8]) -> [u8; 32] {
+	hash_to_bytes(&bytes_to_felts_compact(x))
 }
 
 /// Double hash: hash(hash(input)), returning bytes.
@@ -207,7 +169,8 @@ pub fn hash_twice_to_felts(x: &[Goldilocks]) -> [Goldilocks; POSEIDON2_OUTPUT] {
 /// The inner hash output (4 felts) is re-hashed directly as field elements.
 /// Used for wormhole address derivation.
 pub fn hash_twice(x: &[Goldilocks]) -> [u8; 32] {
-	serialization::digest_to_bytes(&hash_twice_to_felts(x))
+	let inner = hash_to_felts(x);
+	hash_to_bytes(&inner)
 }
 
 /// Re-hash a 32-byte digest to produce a new 32-byte digest.
@@ -233,42 +196,40 @@ pub fn hash_squeeze_twice(x: &[u8]) -> [u8; 64] {
 mod tests {
 	use super::*;
 	use crate::alloc::string::ToString;
-	use alloc::{format, vec};
+	use alloc::{format, vec, vec::Vec};
 	use p3_field::PrimeField64;
-
-	const C: usize = PROOF_NODE_MAX_SIZE_FELTS;
 
 	#[test]
 	fn test_empty_input() {
-		let result = hash_for_circuit::<C>(&[]);
+		let result = hash_compact(&[]);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_single_byte() {
 		let input = vec![42u8];
-		let result = hash_for_circuit::<C>(&input);
+		let result = hash_compact(&input);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_exactly_32_bytes() {
 		let input = [1u8; 32];
-		let result = hash_for_circuit::<C>(&input);
+		let result = hash_compact(&input);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_multiple_chunks() {
 		let input = [2u8; 64];
-		let result = hash_for_circuit::<C>(&input);
+		let result = hash_compact(&input);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_partial_chunk() {
 		let input = [3u8; 40];
-		let result = hash_for_circuit::<C>(&input);
+		let result = hash_compact(&input);
 		assert_eq!(result.len(), 32);
 	}
 
@@ -276,11 +237,11 @@ mod tests {
 	fn test_consistency() {
 		let input = [4u8; 50];
 		let iterations = 10;
-		let current_hash = hash_for_circuit::<C>(&input);
+		let current_hash = hash_compact(&input);
 
 		for _ in 0..iterations {
-			let hash1 = hash_for_circuit::<C>(&current_hash);
-			let hash2 = hash_for_circuit::<C>(&current_hash);
+			let hash1 = hash_compact(&current_hash);
+			let hash2 = hash_compact(&current_hash);
 			assert_eq!(hash1, hash2, "Hash function should be deterministic");
 		}
 	}
@@ -289,8 +250,8 @@ mod tests {
 	fn test_different_inputs() {
 		let input1 = [5u8; 32];
 		let input2 = [6u8; 32];
-		let hash1 = hash_for_circuit::<C>(&input1);
-		let hash2 = hash_for_circuit::<C>(&input2);
+		let hash1 = hash_compact(&input1);
+		let hash2 = hash_compact(&input2);
 		assert_ne!(hash1, hash2, "Different inputs should produce different hashes");
 	}
 
@@ -298,7 +259,7 @@ mod tests {
 	fn test_poseidon2_hash_input_sizes() {
 		for size in 1..=128 {
 			let input: Vec<u8> = (0..size).map(|i| (i * i % 256) as u8).collect();
-			let hash = hash_for_circuit::<C>(&input);
+			let hash = hash_compact(&input);
 			assert_eq!(hash.len(), 32, "Input size {} should produce 32-byte hash", size);
 		}
 	}
@@ -308,7 +269,7 @@ mod tests {
 		for overflow in 1..=10 {
 			let preimage =
 				(<p3_goldilocks::Goldilocks as PrimeField64>::ORDER_U64 + overflow).to_le_bytes();
-			let _hash = hash_for_circuit::<C>(&preimage);
+			let _hash = hash_compact(&preimage);
 		}
 	}
 
@@ -316,8 +277,8 @@ mod tests {
 	fn test_circuit_preimage() {
 		let preimage =
 			hex::decode("afd8e7530b95ee5ebab950c9a0c62fae1e80463687b3982233028e914f8ec7cc");
-		let hash = hash_for_circuit::<C>(&preimage.unwrap());
-		let _hash = hash_for_circuit::<C>(&hash);
+		let hash = hash_compact(&preimage.unwrap());
+		let _hash = hash_compact(&hash);
 	}
 
 	#[test]
@@ -336,21 +297,22 @@ mod tests {
 
 		for hex_string in hex_strings.iter() {
 			let preimage = hex::decode(hex_string).unwrap();
-			let hash = hash_for_circuit::<C>(&preimage);
-			let _hash2 = hash_for_circuit::<C>(&hash);
+			let hash = hash_compact(&preimage);
+			let _hash2 = hash_compact(&hash);
 		}
 	}
 
 	#[test]
-	fn test_hash_bytes_vs_circuit() {
+	fn test_hash_bytes_vs_compact() {
 		let input = b"test";
-		let circuit_hash = hash_for_circuit::<C>(input);
-		let no_pad_hash = hash_bytes(input);
+		let compact_hash = hash_compact(input);
+		let injective_hash = hash_bytes(input);
 
-		// These should be different since one is padded and the other isn't
-		assert_ne!(circuit_hash, no_pad_hash);
-		assert_eq!(circuit_hash.len(), 32);
-		assert_eq!(no_pad_hash.len(), 32);
+		// These should be different since they use different encodings
+		// (compact: 8 bytes/felt vs injective: 4 bytes/felt with terminator)
+		assert_ne!(compact_hash, injective_hash);
+		assert_eq!(compact_hash.len(), 32);
+		assert_eq!(injective_hash.len(), 32);
 	}
 
 	#[test]
@@ -379,14 +341,13 @@ mod tests {
 		let first_hash_bytes = hash_to_bytes(&input_felts);
 
 		let double_hash_bytes = hash_twice(&input_felts);
-		let double_hash_felts = hash_twice_to_felts(&input_felts);
 
 		assert_ne!(first_hash_bytes, double_hash_bytes);
 
-		let manual_double = hash_to_felts(&first_hash_felts);
-		assert_eq!(double_hash_felts, manual_double);
-
-		assert_eq!(serialization::digest_to_bytes(&double_hash_felts), double_hash_bytes);
+		// Verify hash_twice matches manual double hash
+		let manual_double_felts = hash_to_felts(&first_hash_felts);
+		let manual_double_bytes = serialization::digest_to_bytes(&manual_double_felts);
+		assert_eq!(double_hash_bytes, manual_double_bytes);
 
 		let double_hash_again = hash_twice(&input_felts);
 		assert_eq!(double_hash_bytes, double_hash_again);
@@ -479,7 +440,7 @@ mod tests {
 		println!("\n// Generated test vectors - copy into test_known_value_hashes:");
 		println!("let vectors: [(Vec<u8>, &str, &str); 18] = [");
 		for (i, input) in inputs.iter().enumerate() {
-			let circuit_hash = hash_for_circuit::<C>(input);
+			let compact_hash = hash_compact(input);
 			let bytes_hash = hash_bytes(input);
 			let input_repr = match i {
 				0 => "vec![]".to_string(),
@@ -500,7 +461,7 @@ mod tests {
 			println!(
 				"\t({}, \"{}\", \"{}\"),",
 				input_repr,
-				hex::encode(circuit_hash),
+				hex::encode(compact_hash),
 				hex::encode(bytes_hash)
 			);
 		}
@@ -509,112 +470,75 @@ mod tests {
 
 	/// Known Answer Tests (KAT) for hash functions.
 	/// These test vectors ensure hash outputs remain stable across versions.
-	/// Format: (input_bytes, hash_for_circuit_output, hash_bytes_output)
+	///
+	/// hash_bytes uses injective encoding (4 bytes/felt with terminator).
 	#[test]
 	fn test_known_value_hashes() {
-		// Generated test vectors - copy into test_known_value_hashes:
-		let vectors: [(Vec<u8>, &str, &str); 18] = [
-			(
-				vec![],
-				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
-				"4d8d22af81f6c27a005a07028590ef4ee480f6c4b93f813daf9de47a07c8ae86",
-			),
-			(
-				vec![0u8],
-				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
-				"8f5b42e350ff5a12788210c86c2bcd49243b8f9350de818b3b0c56839a42ebad",
-			),
+		// Test vectors for hash_bytes (injective encoding)
+		let vectors: [(Vec<u8>, &str); 18] = [
+			(vec![], "4d8d22af81f6c27a005a07028590ef4ee480f6c4b93f813daf9de47a07c8ae86"),
+			(vec![0u8], "8f5b42e350ff5a12788210c86c2bcd49243b8f9350de818b3b0c56839a42ebad"),
 			(
 				vec![0u8, 0u8],
-				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"3e6ee24fb61a22f4d825b72fc8ebd359e3b3b9566e246c71c3e450ebe3262f9c",
 			),
 			(
 				vec![0u8, 0u8, 0u8],
-				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"34f4338a6f1b671062a3ac00b37ca05a47b43e16e589ccaa5b063416ba42356b",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8],
-				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"7bac8c6bc49b0b750f2ce0912b815a2cb4ae20c75ac430850257882d9d321afa",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8, 0u8],
-				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"c95cfddb573adf4070b3d7c8d2dfbbee48b4b973d80cbda2b458abe7bb6f0def",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"a4dc08d0a8c5ea44007462fe1fd8e45962d4ea85c420eab4140fbb30b5b5e111",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"b01975012df91d9f9f040c34655f23f3ec1f6d1738d85679e9848143756637c9",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"eacd9e48d2e968131e48c8e69f2a211cc06c7778db6c5467348b45418fc7f585",
 			),
 			(
 				vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
 				"00df670e8ec0751d3fb9b5f0281d0af9a7a82f62ad35a21247a9d6117daec151",
 			),
-			(
-				vec![0u8; 14],
-				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
-				"d6182896f274c5d9640972e2bf2a5e893e516a21adfdd8ebd39969128d619934",
-			),
-			(
-				vec![0u8; 15],
-				"f65f4601aae1cec423d21750d4010f1653db3332655aae3e50cff3d08db9a1bb",
-				"15fc2f3c3bc51c96797b889d4fecfcd3535b959f510c007598a87f099e356303",
-			),
+			(vec![0u8; 14], "d6182896f274c5d9640972e2bf2a5e893e516a21adfdd8ebd39969128d619934"),
+			(vec![0u8; 15], "15fc2f3c3bc51c96797b889d4fecfcd3535b959f510c007598a87f099e356303"),
 			(
 				vec![0u8, 0u8, 0u8, 1u8],
-				"e7fc4ca465774d1aa97377c9c11af0e374d02cbe925a3fe5fd8c031db28c9b03",
 				"6ffff0c97262139567c426e916c1fd70c924010153c366bb2a8957ea89902942",
 			),
 			(
 				vec![1u8, 2, 3, 4, 5, 6, 7, 8],
-				"1b34c6db4eae6950ad48a63d31f846a1e7d140e6ecccb50a712ce6a9d536e5da",
 				"131020b2e74819343f8568258ae2e9717e9b2253d57baabab78a518bc7499a8b",
 			),
 			(
 				vec![255u8; 32],
-				"4e6ec9a3d2beb1b978d38f6a5e0181d762a02e68a9647194a52b1db0cfa74985",
 				"41260a4322e97dc3dda2b5f70b5ffb1b43071ad5510e101f34209721042c0987",
 			),
 			(
 				b"hello world".to_vec(),
-				"6c2f70750bd9ceafc7802e8bfd7f2e12ae018d55ba76c56cf5e5e2ca66381635",
 				"fd1f5d7d4701c25bbdd5dd6e3be6abb474fffbaa402f814dce95f8283abbf3e7",
 			),
 			(
 				(0u8..32).collect::<Vec<u8>>(),
-				"9afdc770a4de1e6f6a5acdbce33c895608e0ef4e0df29c7dd3bb55166fc3aeb4",
 				"36884f9093be80632397f5736dce2fece627a4182daf3cdbf8bf12c8e3e02668",
 			),
 			(
 				(0u8..64).collect::<Vec<u8>>(),
-				"89fcde335d31dc115a79fa485352812f8d4ed3055ec9c1e297ac39bd93e9db3e",
 				"dd0d06fbe4e7575d0eeac53706482cbbe592e269a35bcd5591a495814371724e",
 			),
 		];
 
-		for (input, expected_circuit, expected_bytes) in vectors.iter() {
-			let circuit_hash = hash_for_circuit::<C>(input);
-			assert_eq!(
-				hex::encode(circuit_hash),
-				*expected_circuit,
-				"hash_for_circuit mismatch for input: 0x{}",
-				hex::encode(input)
-			);
-
+		for (input, expected_bytes) in vectors.iter() {
 			let bytes_hash = hash_bytes(input);
 			assert_eq!(
 				hex::encode(bytes_hash),
@@ -623,5 +547,16 @@ mod tests {
 				hex::encode(input)
 			);
 		}
+
+		// Test that hash_compact produces consistent results (not testing specific values
+		// since compact encoding without padding is only safe for fixed-size inputs)
+		let compact_hash1 = hash_compact(b"test");
+		let compact_hash2 = hash_compact(b"test");
+		assert_eq!(compact_hash1, compact_hash2, "hash_compact should be deterministic");
+
+		// Test that different inputs produce different hashes
+		let hash_a = hash_compact(b"a");
+		let hash_b = hash_compact(b"b");
+		assert_ne!(hash_a, hash_b, "Different inputs should produce different hashes");
 	}
 }

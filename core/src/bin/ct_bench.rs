@@ -26,8 +26,6 @@ use p3_goldilocks::Goldilocks;
 use p3_symmetric::Permutation;
 use qp_poseidon_core::{serialization::bytes_to_felts, *};
 
-const FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 160;
-
 // Test sizes in bytes
 const SMALL_INPUT_SIZE: usize = 32;
 const MEDIUM_INPUT_SIZE: usize = 256;
@@ -117,7 +115,7 @@ fn test_hash_padded_bytes_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+			let _result = hash_compact(&input);
 		});
 	}
 }
@@ -139,7 +137,7 @@ fn test_hash_padded_bytes_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+			let _result = hash_compact(&input);
 		});
 	}
 }
@@ -161,7 +159,7 @@ fn test_hash_padded_bytes_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+			let _result = hash_compact(&input);
 		});
 	}
 }
@@ -183,7 +181,7 @@ fn test_hash_padded_bytes_xlarge_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+			let _result = hash_compact(&input);
 		});
 	}
 }
@@ -572,7 +570,7 @@ fn test_single_byte_edge_cases_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+			let _result = hash_compact(&input);
 		});
 	}
 }
@@ -595,7 +593,7 @@ fn test_integrated_operations_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 
 		runner.run_one(class, || {
 			// Test a sequence of operations that might be used together
-			let _hash_padded = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+			let _hash_padded = hash_compact(&input);
 			let _hash_variable = hash_bytes(&input);
 			let _squeeze = hash_squeeze_twice(&input);
 		});
@@ -636,7 +634,7 @@ mod tests {
 	fn test_ct_functions_compile() {
 		// This test just ensures the hash functions compile and work
 		let input = vec![0u8; 32];
-		let _result = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+		let _result = hash_compact(&input);
 		let _result2 = hash_bytes(&input);
 		let _result3 = hash_squeeze_twice(&input);
 
