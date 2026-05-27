@@ -18,7 +18,7 @@ use core::{
 use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::Goldilocks;
 use qp_poseidon_core::{
-	hash_for_circuit, hash_to_bytes,
+	hash_for_circuit,
 	serialization::{bytes_to_digest, u128_to_quantized_felt, u64_to_felts},
 	PROOF_NODE_MAX_SIZE_FELTS,
 };
@@ -172,18 +172,6 @@ impl PoseidonHasher {
 	/// pads to a fixed number of elements, then hashes.
 	pub fn hash_for_circuit(x: &[u8]) -> [u8; 32] {
 		hash_for_circuit::<PROOF_NODE_MAX_SIZE_FELTS>(x)
-	}
-
-	/// Hash storage key or value.
-	///
-	/// Decodes the input bytes into `T` and converts to felts according to `ToFelts`.
-	/// This ensures the hash matches the circuit's expected preimage for type `T`.
-	pub fn hash_storage<T: Decode + ToFelts>(x: &[u8]) -> [u8; 32] {
-		let t = T::decode(&mut &x[..])
-			.expect("Input bytes length or format mismatch for the expected type");
-
-		let felts = t.to_felts();
-		hash_to_bytes(&felts)
 	}
 }
 
@@ -380,61 +368,6 @@ mod tests {
 				.unwrap();
 		let felts = bytes_to_felts(&preimage);
 		let _hash = hash_twice(&felts);
-	}
-
-	#[test]
-	fn test_hash_storage() {
-		use sp_core::crypto::AccountId32;
-
-		let asset_id = 42_u32;
-		let transfer_count = 7_u64;
-		let from_account = AccountId32::new([1u8; 32]);
-		let to_account = AccountId32::new([2u8; 32]);
-		let amount = 1_000_000_u128;
-
-		let encoded =
-			(asset_id, transfer_count, from_account.clone(), to_account.clone(), amount).encode();
-
-		// The generic type T must match the structure of the encoded data
-		type TransferKey = (u32, u64, AccountId32, AccountId32, u128);
-
-		let hash = PoseidonHasher::hash_storage::<TransferKey>(&encoded);
-		assert_eq!(hash.len(), 32);
-
-		// Should fail if the input length is incorrect
-		let invalid_encoded = &encoded[0..encoded.len() - 1];
-
-		let result = std::panic::catch_unwind(|| {
-			let _ = PoseidonHasher::hash_storage::<TransferKey>(invalid_encoded);
-		});
-		assert!(result.is_err(), "Expected panic due to invalid input length");
-	}
-
-	#[test]
-	fn test_hash_storage_generic() {
-		// Test with simple u64
-		let val = 12345_u64;
-		let encoded = val.encode();
-		let hash = PoseidonHasher::hash_storage::<u64>(&encoded);
-		assert_eq!(hash.len(), 32);
-
-		// Test with tuple
-		let val_tuple = (1u32, 2u64);
-		let encoded_tuple = val_tuple.encode();
-		let hash_tuple = PoseidonHasher::hash_storage::<(u32, u64)>(&encoded_tuple);
-		assert_eq!(hash_tuple.len(), 32);
-
-		// Test with u32
-		let val_u32 = 12345_u32;
-		let encoded_u32 = val_u32.encode();
-		let hash_u32 = PoseidonHasher::hash_storage::<u32>(&encoded_u32);
-		assert_eq!(hash_u32.len(), 32);
-
-		// Test with Vec
-		let val_vec = vec![1u32, 2u32, 3u32];
-		let encoded_vec = val_vec.encode();
-		let hash_vec = PoseidonHasher::hash_storage::<Vec<u32>>(&encoded_vec);
-		assert_eq!(hash_vec.len(), 32);
 	}
 
 	#[test]
