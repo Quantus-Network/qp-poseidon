@@ -17,8 +17,6 @@ keywords = [
 categories = ["cryptography", "no-std"]
 
 [dependencies]
-# Common (no_std-friendly; we seed ChaCha from a fixed value)
-rand_chacha.workspace = true
 qp-poseidon-constants.workspace = true
 
 # Plonky3 stack
