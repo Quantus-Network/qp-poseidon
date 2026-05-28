@@ -26,8 +26,6 @@ use p3_goldilocks::Goldilocks;
 use p3_symmetric::Permutation;
 use qp_poseidon_core::{serialization::bytes_to_felts, *};
 
-const FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 160;
-
 // Test sizes in bytes
 const SMALL_INPUT_SIZE: usize = 32;
 const MEDIUM_INPUT_SIZE: usize = 256;
@@ -100,9 +98,9 @@ fn disrupt_cache(rng: &mut BenchRng) {
 	std::hint::black_box(sum);
 }
 
-/// Test hash_padded_bytes with small inputs (32 bytes)
+/// Test hash_bytes with small inputs (32 bytes)
 #[cfg(feature = "dudect-bencher")]
-fn test_hash_padded_bytes_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+fn test_hash_bytes_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(SMALL_INPUT_SIZE, rng);
 
@@ -117,14 +115,14 @@ fn test_hash_padded_bytes_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+			let _result = hash_bytes(&input);
 		});
 	}
 }
 
-/// Test hash_padded_bytes with medium inputs (256 bytes)
+/// Test hash_bytes with medium inputs (256 bytes)
 #[cfg(feature = "dudect-bencher")]
-fn test_hash_padded_bytes_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+fn test_hash_bytes_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE, rng);
 
@@ -139,14 +137,14 @@ fn test_hash_padded_bytes_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+			let _result = hash_bytes(&input);
 		});
 	}
 }
 
-/// Test hash_padded_bytes with large inputs (1KB)
+/// Test hash_bytes with large inputs (1KB)
 #[cfg(feature = "dudect-bencher")]
-fn test_hash_padded_bytes_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+fn test_hash_bytes_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(LARGE_INPUT_SIZE, rng);
 
@@ -161,14 +159,14 @@ fn test_hash_padded_bytes_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+			let _result = hash_bytes(&input);
 		});
 	}
 }
 
-/// Test hash_padded_bytes with extra large inputs (4KB)
+/// Test hash_bytes with extra large inputs (4KB)
 #[cfg(feature = "dudect-bencher")]
-fn test_hash_padded_bytes_xlarge_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
+fn test_hash_bytes_xlarge_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(EXTRA_LARGE_INPUT_SIZE, rng);
 
@@ -183,7 +181,7 @@ fn test_hash_padded_bytes_xlarge_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+			let _result = hash_bytes(&input);
 		});
 	}
 }
@@ -572,7 +570,7 @@ fn test_single_byte_edge_cases_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
+			let _result = hash_bytes(&input);
 		});
 	}
 }
@@ -595,8 +593,9 @@ fn test_integrated_operations_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 
 		runner.run_one(class, || {
 			// Test a sequence of operations that might be used together
-			let _hash_padded = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
-			let _hash_variable = hash_bytes(&input);
+			let hash = hash_bytes(&input);
+			// Chain with rehash (tests bytes -> felts -> hash path)
+			let _rehash = rehash_to_bytes(&hash);
 			let _squeeze = hash_squeeze_twice(&input);
 		});
 	}
@@ -636,8 +635,8 @@ mod tests {
 	fn test_ct_functions_compile() {
 		// This test just ensures the hash functions compile and work
 		let input = vec![0u8; 32];
-		let _result = hash_for_circuit::<FIELD_ELEMENT_PREIMAGE_PADDING_LEN>(&input);
-		let _result2 = hash_bytes(&input);
+		let hash = hash_bytes(&input);
+		let _rehash = rehash_to_bytes(&hash);
 		let _result3 = hash_squeeze_twice(&input);
 
 		// Test field operations
@@ -650,11 +649,11 @@ mod tests {
 // This creates a main function when compiled as a binary
 #[cfg(all(not(test), feature = "dudect-bencher"))]
 dudect_bencher::ctbench_main!(
-	// hash_padded_bytes tests for different input sizes
-	test_hash_padded_bytes_small_ct,
-	test_hash_padded_bytes_medium_ct,
-	test_hash_padded_bytes_large_ct,
-	test_hash_padded_bytes_xlarge_ct,
+	// hash_bytes tests for different input sizes
+	test_hash_bytes_small_ct,
+	test_hash_bytes_medium_ct,
+	test_hash_bytes_large_ct,
+	test_hash_bytes_xlarge_ct,
 	// hash_variable_length_bytes tests for different input sizes
 	test_hash_variable_length_bytes_small_ct,
 	test_hash_variable_length_bytes_medium_ct,

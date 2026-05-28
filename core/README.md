@@ -1,82 +1,91 @@
 # qp-poseidon-core
 
-A pure Rust implementation of the Poseidon hash function using plonky3 field arithmetic. This crate provides the core cryptographic functionality without any external dependencies beyond plonky3. 
+Pure Rust implementation of Poseidon2 hashing over the Goldilocks field (p = 2^64 - 2^32 + 1).
 
 ## Features
 
-- **No-std compatible**: Works in embedded and constrained environments
-- **Pure cryptography**: No blockchain or external dependencies
-- **Circuit-compatible**: Padding behavior matches zero-knowledge circuit implementations
-- **Field arithmetic**: Built on battle-tested plonky3 Goldilocks field
+- **No-std compatible**: Works in embedded, WASM, and constrained environments
+- **Circuit-compatible**: Encoding matches ZK circuit implementations
+- **Collision-resistant**: Injective encoding prevents length-extension and padding attacks
+- **Goldilocks field**: Built on plonky3's optimized 64-bit prime field arithmetic
 
-### Basic Usage
+## Usage
 
-```rust
-use qp_poseidon_core::PoseidonCore;
-
-// Hash some bytes with padding (recommended for circuit compatibility)
-let data = b"hello world";
-let hash = PoseidonCore::hash_for_circuit(data);
-println!("Hash: {:?}", hash);
-
-// Hash without padding
-let hash_no_pad = PoseidonCore::hash_no_pad_bytes(data);
-```
-
-### Working with Field Elements
+### Hash Arbitrary Bytes
 
 ```rust
-use qp_poseidon_core::{PoseidonCore, injective_bytes_to_felts};
-use plonky3::field::goldilocks_field::GoldilocksField;
+use qp_poseidon_core::hash_bytes;
 
-// Convert bytes to field elements
-let data = b"test data";
-let felts = injective_bytes_to_felts(data);
-
-// Hash field elements directly
-let hash = PoseidonCore::hash_padded_felts(felts);
+// Injective encoding - safe for any input length
+let hash: [u8; 32] = hash_bytes(b"hello world");
 ```
 
-### Utility Functions
-
-The crate provides several utility functions for converting between different data types and field elements:
+### Hash Field Elements
 
 ```rust
-use qp_poseidon_core::{u64_to_felts, u128_to_felts, injective_string_to_felts};
+use qp_poseidon_core::{hash_to_bytes, hash_to_felts};
+use qp_poseidon_core::serialization::bytes_to_felts;
 
-// Convert numbers to field elements
-let num_felts = u64_to_felts(12345);
-let large_num_felts = u128_to_felts(123456789012345);
+let felts = bytes_to_felts(b"data");
 
-// Convert strings to field elements (max 8 bytes)
-let string_felts = injective_string_to_felts("hello");
+// Get 32-byte hash
+let hash: [u8; 32] = hash_to_bytes(&felts);
+
+// Get 4 field elements (for chaining)
+let hash_felts = hash_to_felts(&felts);
 ```
 
-### Constants
+### Double Hashing (Wormhole Addresses)
 
-- `FIELD_ELEMENT_PREIMAGE_PADDING_LEN: usize = 160` - Minimum field elements for circuit-compatible padding
+```rust
+use qp_poseidon_core::{hash_twice, rehash_to_bytes};
+use qp_poseidon_core::serialization::bytes_to_felts;
 
-### Padding Behavior
+let felts = bytes_to_felts(b"secret");
 
-- **Padded functions**: Automatically pad input to `FIELD_ELEMENT_PREIMAGE_PADDING_LEN` field elements
-- **Unpadded functions**: Hash input as-is without modification
-- **Field element conversion**: Uses injective mapping to preserve input uniqueness
+// hash(hash(input)) - used for wormhole address derivation
+let address: [u8; 32] = hash_twice(&felts);
 
-## Performance
+// Re-hash an existing 32-byte digest
+let first_hash = hash_to_bytes(&felts);
+let second_hash: [u8; 32] = rehash_to_bytes(&first_hash);
+```
 
-- Optimized for deterministic behavior across platforms
-- Memory efficient for constrained environments
-- Uses plonky3's optimized field arithmetic
-- No heap allocations in core hashing (only in utility functions)
+### Mining (64-byte Output)
 
-## Security
+```rust
+use qp_poseidon_core::hash_squeeze_twice;
 
-- Built on battle-tested plonky3 field arithmetic
-- Implements standard Poseidon permutation
-- Circuit-compatible padding prevents length extension attacks
-- Extensive test coverage with known test vectors
+// Two sponge squeezes for 64-byte output
+let hash_512: [u8; 64] = hash_squeeze_twice(b"block data");
+```
+
+## Encoding Modes
+
+### Injective Encoding (Default)
+
+Used by `hash_bytes` and `bytes_to_felts`. Safe for variable-length inputs.
+
+- 4 bytes per field element
+- Terminator byte (0x01) marks end of input
+- Guarantees different inputs produce different field element sequences
+
+### Compact Encoding
+
+Used by `bytes_to_felts_compact`. Only safe for fixed-size inputs.
+
+- 8 bytes per field element (full capacity)
+- No length marker - trailing zeros collide
+- Use only when input size is enforced externally (e.g., ZK circuits)
+
+## Security Notes
+
+1. **Always use `hash_bytes` for arbitrary input** - it's collision-resistant
+2. **Compact encoding is for circuits only** - where input size is constrained by the circuit
+3. **No padding functions** - legacy padded hashing was removed due to audit findings
+4. **Timing resistance** - core hashing has no input-dependent branches
 
 ## Related Crates
 
-- [`qp-poseidon`](../substrate) - Substrate-compatible wrapper around this core implementation
-- [`plonky3`](https://github.com/0xPolygonZero/plonky3) - The underlying field arithmetic and Poseidon implementation
+- [`qp-poseidon-constants`](https://crates.io/crates/qp-poseidon-constants) - Round constants
+- [`plonky3`](https://github.com/0xPolygonZero/plonky3) - Field arithmetic
