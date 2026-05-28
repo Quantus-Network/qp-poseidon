@@ -593,8 +593,9 @@ fn test_integrated_operations_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 
 		runner.run_one(class, || {
 			// Test a sequence of operations that might be used together
-			let _hash_padded = hash_bytes(&input);
-			let _hash_variable = hash_bytes(&input);
+			let hash = hash_bytes(&input);
+			// Chain with rehash (tests bytes -> felts -> hash path)
+			let _rehash = rehash_to_bytes(&hash);
 			let _squeeze = hash_squeeze_twice(&input);
 		});
 	}
@@ -634,8 +635,8 @@ mod tests {
 	fn test_ct_functions_compile() {
 		// This test just ensures the hash functions compile and work
 		let input = vec![0u8; 32];
-		let _result = hash_bytes(&input);
-		let _result2 = hash_bytes(&input);
+		let hash = hash_bytes(&input);
+		let _rehash = rehash_to_bytes(&hash);
 		let _result3 = hash_squeeze_twice(&input);
 
 		// Test field operations
