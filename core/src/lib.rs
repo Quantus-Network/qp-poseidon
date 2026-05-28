@@ -559,4 +559,72 @@ mod tests {
 		let hash_b = hash_compact(b"b");
 		assert_ne!(hash_a, hash_b, "Different inputs should produce different hashes");
 	}
+
+	/// Test vectors for hash_twice and rehash_to_bytes.
+	/// These ensure hash chaining operations remain stable across versions.
+	#[test]
+	fn test_hash_twice_vectors() {
+		use p3_field::PrimeCharacteristicRing;
+
+		// hash_twice test vectors (input felts -> output bytes)
+		// Empty input
+		let empty: Vec<Goldilocks> = vec![];
+		assert_eq!(
+			hex::encode(hash_twice(&empty)),
+			"b8a2f205ad2e2682ab8af6e49946a597920a24d916ca1139b6fce113c207365b"
+		);
+
+		// Single zero felt
+		let single_zero = vec![Goldilocks::ZERO];
+		assert_eq!(
+			hex::encode(hash_twice(&single_zero)),
+			"6e962ae00104d1c8907142439156035ad71242caab590a74ba8c9850df03ff11"
+		);
+
+		// Single one felt
+		let single_one = vec![Goldilocks::ONE];
+		assert_eq!(
+			hex::encode(hash_twice(&single_one)),
+			"50be997dba65a402610d93f8fe853b0974fc72e4605effd5603deb900667e497"
+		);
+
+		// Four felts (typical hash output size)
+		let four_felts: Vec<Goldilocks> = (1u64..=4).map(Goldilocks::from_u64).collect();
+		assert_eq!(
+			hex::encode(hash_twice(&four_felts)),
+			"153624f84074a4503ea9139d64ad54da77849d83eb0e6a8e1f839bfe31c222b5"
+		);
+
+		// Eight felts
+		let eight_felts: Vec<Goldilocks> = (1u64..=8).map(Goldilocks::from_u64).collect();
+		assert_eq!(
+			hex::encode(hash_twice(&eight_felts)),
+			"958293c7f14ec2ef872955b510eee16f041217f37f8db0c0287fbe182afde6af"
+		);
+	}
+
+	/// Test vectors for rehash_to_bytes (32-byte input -> 32-byte output).
+	#[test]
+	fn test_rehash_to_bytes_vectors() {
+		// All zeros
+		let zeros = [0u8; 32];
+		assert_eq!(
+			hex::encode(rehash_to_bytes(&zeros)),
+			"ca0aefbd2e87c9ecc4716b7db8e83937a45dfb06ea10e1d62a4c2f2784002290"
+		);
+
+		// Sequential bytes 0..32
+		let seq: [u8; 32] = core::array::from_fn(|i| i as u8);
+		assert_eq!(
+			hex::encode(rehash_to_bytes(&seq)),
+			"c0877470eb2fbfc7cc6f22ab70955509de54f3b89856d6a58399a7b7d9d26252"
+		);
+
+		// All 0xFF
+		let ones = [0xFFu8; 32];
+		assert_eq!(
+			hex::encode(rehash_to_bytes(&ones)),
+			"242fcadf76ea91d398421eb1136b1dbf9f79bdadd79662a21689a0823cf46746"
+		);
+	}
 }
