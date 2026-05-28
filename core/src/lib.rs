@@ -133,10 +133,6 @@ pub fn hash_bytes(x: &[u8]) -> [u8; 32] {
 	st.finalize_to_bytes()
 }
 
-// ============================================================================
-// Compact encoding hash functions
-// ============================================================================
-
 /// Double hash: hash(hash(input)), returning bytes.
 ///
 /// The inner hash output (4 felts) is re-hashed directly as field elements.
