@@ -3,7 +3,7 @@ use p3_field::integers::QuotientMap;
 use p3_goldilocks::Goldilocks;
 use qp_poseidon_constants::create_poseidon;
 use qp_poseidon_core::{
-	hash_bytes, hash_compact, hash_squeeze_twice, hash_to_bytes, serialization::bytes_to_felts,
+	hash_bytes, hash_squeeze_twice, hash_to_bytes, serialization::bytes_to_felts,
 };
 
 /// Generate test data of varying sizes for benchmarking
@@ -29,12 +29,6 @@ fn bench_hash_only(c: &mut Criterion) {
 		let data = generate_test_data(size);
 
 		group.throughput(Throughput::Bytes(size as u64));
-		group.bench_with_input(BenchmarkId::new("hash_compact", size), &data, |b, data| {
-			b.iter(|| {
-				let result = hash_compact(black_box(data));
-				black_box(result)
-			})
-		});
 
 		group.bench_with_input(BenchmarkId::new("hash_bytes", size), &data, |b, data| {
 			b.iter(|| {
@@ -76,12 +70,6 @@ fn bench_create_and_hash(c: &mut Criterion) {
 		let data = generate_test_data(size);
 
 		group.throughput(Throughput::Bytes(size as u64));
-		group.bench_with_input(BenchmarkId::new("new_and_hash_compact", size), &data, |b, data| {
-			b.iter(|| {
-				let result = hash_compact(black_box(data));
-				black_box(result)
-			})
-		});
 
 		group.bench_with_input(BenchmarkId::new("new_and_hash_bytes", size), &data, |b, data| {
 			b.iter(|| {
