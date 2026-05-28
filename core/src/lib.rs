@@ -6,7 +6,7 @@ use qp_poseidon_constants as constants;
 
 pub mod serialization;
 
-use crate::serialization::{bytes_to_felts, bytes_to_felts_compact};
+use crate::serialization::bytes_to_felts;
 use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::{Goldilocks, Poseidon2Goldilocks};
 use p3_symmetric::Permutation;
@@ -137,33 +137,6 @@ pub fn hash_bytes(x: &[u8]) -> [u8; 32] {
 // Compact encoding hash functions
 // ============================================================================
 
-/// Hash a Dilithium ML-DSA-87 public key (2592 bytes) using compact encoding.
-///
-/// Uses compact encoding (8 bytes/felt) for circuit compatibility.
-/// This is the recommended way to derive an account ID from a Dilithium public key.
-///
-/// # Safety
-/// This function uses compact encoding which is only collision-resistant for fixed-size
-/// inputs. The fixed array size ensures callers provide exactly 2592 bytes.
-pub fn hash_pubkey(pubkey: &[u8; 2592]) -> [u8; 32] {
-	hash_compact(pubkey)
-}
-
-/// Hash bytes using compact encoding (8 bytes/felt).
-///
-/// Converts bytes to field elements using compact encoding, then hashes.
-///
-/// # Warning
-/// This function is NOT collision-resistant for variable-length inputs because:
-/// 1. Compact encoding doesn't include a length marker (trailing zeros collide)
-/// 2. Values >= Goldilocks prime are reduced (field element collisions)
-///
-/// Only use this with fixed-size inputs where the size is known and enforced.
-/// Prefer the type-safe wrappers like `hash_pubkey` for public APIs.
-pub(crate) fn hash_compact(x: &[u8]) -> [u8; 32] {
-	hash_to_bytes(&bytes_to_felts_compact(x))
-}
-
 /// Double hash: hash(hash(input)), returning bytes.
 ///
 /// The inner hash output (4 felts) is re-hashed directly as field elements.
@@ -201,35 +174,35 @@ mod tests {
 
 	#[test]
 	fn test_empty_input() {
-		let result = hash_compact(&[]);
+		let result = hash_bytes(&[]);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_single_byte() {
 		let input = vec![42u8];
-		let result = hash_compact(&input);
+		let result = hash_bytes(&input);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_exactly_32_bytes() {
 		let input = [1u8; 32];
-		let result = hash_compact(&input);
+		let result = hash_bytes(&input);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_multiple_chunks() {
 		let input = [2u8; 64];
-		let result = hash_compact(&input);
+		let result = hash_bytes(&input);
 		assert_eq!(result.len(), 32);
 	}
 
 	#[test]
 	fn test_partial_chunk() {
 		let input = [3u8; 40];
-		let result = hash_compact(&input);
+		let result = hash_bytes(&input);
 		assert_eq!(result.len(), 32);
 	}
 
@@ -237,11 +210,11 @@ mod tests {
 	fn test_consistency() {
 		let input = [4u8; 50];
 		let iterations = 10;
-		let current_hash = hash_compact(&input);
+		let current_hash = hash_bytes(&input);
 
 		for _ in 0..iterations {
-			let hash1 = hash_compact(&current_hash);
-			let hash2 = hash_compact(&current_hash);
+			let hash1 = hash_bytes(&current_hash);
+			let hash2 = hash_bytes(&current_hash);
 			assert_eq!(hash1, hash2, "Hash function should be deterministic");
 		}
 	}
@@ -250,8 +223,8 @@ mod tests {
 	fn test_different_inputs() {
 		let input1 = [5u8; 32];
 		let input2 = [6u8; 32];
-		let hash1 = hash_compact(&input1);
-		let hash2 = hash_compact(&input2);
+		let hash1 = hash_bytes(&input1);
+		let hash2 = hash_bytes(&input2);
 		assert_ne!(hash1, hash2, "Different inputs should produce different hashes");
 	}
 
@@ -259,7 +232,7 @@ mod tests {
 	fn test_poseidon2_hash_input_sizes() {
 		for size in 1..=128 {
 			let input: Vec<u8> = (0..size).map(|i| (i * i % 256) as u8).collect();
-			let hash = hash_compact(&input);
+			let hash = hash_bytes(&input);
 			assert_eq!(hash.len(), 32, "Input size {} should produce 32-byte hash", size);
 		}
 	}
@@ -269,7 +242,7 @@ mod tests {
 		for overflow in 1..=10 {
 			let preimage =
 				(<p3_goldilocks::Goldilocks as PrimeField64>::ORDER_U64 + overflow).to_le_bytes();
-			let _hash = hash_compact(&preimage);
+			let _hash = hash_bytes(&preimage);
 		}
 	}
 
@@ -277,8 +250,8 @@ mod tests {
 	fn test_circuit_preimage() {
 		let preimage =
 			hex::decode("afd8e7530b95ee5ebab950c9a0c62fae1e80463687b3982233028e914f8ec7cc");
-		let hash = hash_compact(&preimage.unwrap());
-		let _hash = hash_compact(&hash);
+		let hash = hash_bytes(&preimage.unwrap());
+		let _hash = hash_bytes(&hash);
 	}
 
 	#[test]
@@ -297,22 +270,9 @@ mod tests {
 
 		for hex_string in hex_strings.iter() {
 			let preimage = hex::decode(hex_string).unwrap();
-			let hash = hash_compact(&preimage);
-			let _hash2 = hash_compact(&hash);
+			let hash = hash_bytes(&preimage);
+			let _hash2 = hash_bytes(&hash);
 		}
-	}
-
-	#[test]
-	fn test_hash_bytes_vs_compact() {
-		let input = b"test";
-		let compact_hash = hash_compact(input);
-		let injective_hash = hash_bytes(input);
-
-		// These should be different since they use different encodings
-		// (compact: 8 bytes/felt vs injective: 4 bytes/felt with terminator)
-		assert_ne!(compact_hash, injective_hash);
-		assert_eq!(compact_hash.len(), 32);
-		assert_eq!(injective_hash.len(), 32);
 	}
 
 	#[test]
@@ -438,9 +398,8 @@ mod tests {
 		];
 
 		println!("\n// Generated test vectors - copy into test_known_value_hashes:");
-		println!("let vectors: [(Vec<u8>, &str, &str); 18] = [");
+		println!("let vectors: [(Vec<u8>, &str); 18] = [");
 		for (i, input) in inputs.iter().enumerate() {
-			let compact_hash = hash_compact(input);
 			let bytes_hash = hash_bytes(input);
 			let input_repr = match i {
 				0 => "vec![]".to_string(),
@@ -458,12 +417,7 @@ mod tests {
 				17 => "(0u8..64).collect::<Vec<u8>>()".to_string(),
 				_ => unreachable!(),
 			};
-			println!(
-				"\t({}, \"{}\", \"{}\"),",
-				input_repr,
-				hex::encode(compact_hash),
-				hex::encode(bytes_hash)
-			);
+			println!("\t({}, \"{}\"),", input_repr, hex::encode(bytes_hash));
 		}
 		println!("];");
 	}
@@ -542,15 +496,14 @@ mod tests {
 			);
 		}
 
-		// Test that hash_compact produces consistent results (not testing specific values
-		// since compact encoding without padding is only safe for fixed-size inputs)
-		let compact_hash1 = hash_compact(b"test");
-		let compact_hash2 = hash_compact(b"test");
-		assert_eq!(compact_hash1, compact_hash2, "hash_compact should be deterministic");
+		// Test that hash_bytes produces consistent results
+		let hash1 = hash_bytes(b"test");
+		let hash2 = hash_bytes(b"test");
+		assert_eq!(hash1, hash2, "hash_bytes should be deterministic");
 
 		// Test that different inputs produce different hashes
-		let hash_a = hash_compact(b"a");
-		let hash_b = hash_compact(b"b");
+		let hash_a = hash_bytes(b"a");
+		let hash_b = hash_bytes(b"b");
 		assert_ne!(hash_a, hash_b, "Different inputs should produce different hashes");
 	}
 
