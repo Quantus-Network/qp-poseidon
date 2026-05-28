@@ -76,16 +76,12 @@ fn bench_create_and_hash(c: &mut Criterion) {
 		let data = generate_test_data(size);
 
 		group.throughput(Throughput::Bytes(size as u64));
-		group.bench_with_input(
-			BenchmarkId::new("new_and_hash_compact", size),
-			&data,
-			|b, data| {
-				b.iter(|| {
-					let result = hash_compact(black_box(data));
-					black_box(result)
-				})
-			},
-		);
+		group.bench_with_input(BenchmarkId::new("new_and_hash_compact", size), &data, |b, data| {
+			b.iter(|| {
+				let result = hash_compact(black_box(data));
+				black_box(result)
+			})
+		});
 
 		group.bench_with_input(BenchmarkId::new("new_and_hash_bytes", size), &data, |b, data| {
 			b.iter(|| {

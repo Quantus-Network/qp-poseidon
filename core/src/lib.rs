@@ -478,10 +478,7 @@ mod tests {
 		let vectors: [(Vec<u8>, &str); 18] = [
 			(vec![], "4d8d22af81f6c27a005a07028590ef4ee480f6c4b93f813daf9de47a07c8ae86"),
 			(vec![0u8], "8f5b42e350ff5a12788210c86c2bcd49243b8f9350de818b3b0c56839a42ebad"),
-			(
-				vec![0u8, 0u8],
-				"3e6ee24fb61a22f4d825b72fc8ebd359e3b3b9566e246c71c3e450ebe3262f9c",
-			),
+			(vec![0u8, 0u8], "3e6ee24fb61a22f4d825b72fc8ebd359e3b3b9566e246c71c3e450ebe3262f9c"),
 			(
 				vec![0u8, 0u8, 0u8],
 				"34f4338a6f1b671062a3ac00b37ca05a47b43e16e589ccaa5b063416ba42356b",
@@ -520,10 +517,7 @@ mod tests {
 				vec![1u8, 2, 3, 4, 5, 6, 7, 8],
 				"131020b2e74819343f8568258ae2e9717e9b2253d57baabab78a518bc7499a8b",
 			),
-			(
-				vec![255u8; 32],
-				"41260a4322e97dc3dda2b5f70b5ffb1b43071ad5510e101f34209721042c0987",
-			),
+			(vec![255u8; 32], "41260a4322e97dc3dda2b5f70b5ffb1b43071ad5510e101f34209721042c0987"),
 			(
 				b"hello world".to_vec(),
 				"fd1f5d7d4701c25bbdd5dd6e3be6abb474fffbaa402f814dce95f8283abbf3e7",
