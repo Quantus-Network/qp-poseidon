@@ -17,21 +17,20 @@ keywords = [
 categories = ["cryptography", "no-std"]
 
 [dependencies]
-dudect-bencher = { version = "0.6", optional = true }
 
 [dev-dependencies]
 hex = "0.4.3"
 criterion = { version = "0.5", features = ["html_reports"] }
+dudect-bencher = "0.6"
 
 [features]
 default = []
 std = []
-ct-testing = ["dudect-bencher", "std"]
-
-[[bin]]
-name = "ct_bench"
-required-features = ["ct-testing"]
 
 [[bench]]
 name = "poseidon_benchmarks"
+harness = false
+
+[[bench]]
+name = "ct_bench"
 harness = false
