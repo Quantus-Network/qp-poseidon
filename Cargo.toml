@@ -31,6 +31,5 @@ std = []
 name = "poseidon_benchmarks"
 harness = false
 
-[[bench]]
+[[example]]
 name = "ct_bench"
-harness = false
