@@ -9,9 +9,43 @@
 use core::{
 	fmt::{Debug, Display, Formatter},
 	hash::{Hash, Hasher},
+	hint::unreachable_unchecked,
 	iter::Sum,
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
+
+// ============================================================================
+// Compiler hints for optimization
+// ============================================================================
+
+/// Tell the compiler that condition `p` is always true.
+/// If `p` is false at runtime, behavior is undefined.
+#[inline(always)]
+fn assume(p: bool) {
+	debug_assert!(p);
+	if !p {
+		unsafe {
+			unreachable_unchecked();
+		}
+	}
+}
+
+/// Force the compiler to emit a branch instruction.
+/// This helps when a branch is rarely taken but important to handle.
+#[inline(always)]
+fn branch_hint() {
+	#[cfg(any(
+		target_arch = "aarch64",
+		target_arch = "arm",
+		target_arch = "riscv32",
+		target_arch = "riscv64",
+		target_arch = "x86",
+		target_arch = "x86_64",
+	))]
+	unsafe {
+		core::arch::asm!("", options(nomem, nostack, preserves_flags));
+	}
+}
 
 /// The Goldilocks prime: p = 2^64 - 2^32 + 1
 pub const P: u64 = 0xFFFF_FFFF_0000_0001;
@@ -155,13 +189,18 @@ impl Debug for Goldilocks {
 impl Add for Goldilocks {
 	type Output = Self;
 
-	#[inline]
+	#[inline(always)]
 	fn add(self, rhs: Self) -> Self {
 		let (sum, over) = self.value.overflowing_add(rhs.value);
 		let (mut sum, over) = sum.overflowing_add(u64::from(over) * NEG_ORDER);
 		if over {
-			// Double overflow is extremely rare
-			sum += NEG_ORDER;
+			// NB: self.value > P && rhs.value > P is necessary but not sufficient for double-overflow.
+			// This assume does two things:
+			//  1. If compiler knows that either self.value or rhs.value <= P, then it can skip this check.
+			//  2. Hints to the compiler how rare this double-overflow is (thus handled better with a branch).
+			assume(self.value > P && rhs.value > P);
+			branch_hint();
+			sum += NEG_ORDER; // Cannot overflow.
 		}
 		Self::new(sum)
 	}
@@ -177,13 +216,19 @@ impl AddAssign for Goldilocks {
 impl Sub for Goldilocks {
 	type Output = Self;
 
-	#[inline]
+	#[inline(always)]
 	fn sub(self, rhs: Self) -> Self {
 		let (diff, under) = self.value.overflowing_sub(rhs.value);
 		let (mut diff, under) = diff.overflowing_sub(u64::from(under) * NEG_ORDER);
 		if under {
-			// Double underflow is extremely rare
-			diff -= NEG_ORDER;
+			// NB: self.value < NEG_ORDER - 1 && rhs.value > P is necessary but not sufficient for double-underflow.
+			// This assume does two things:
+			//  1. If compiler knows that either self.value >= NEG_ORDER - 1 or rhs.value <= P,
+			//     then it can skip this check.
+			//  2. Hints to the compiler how rare this double-underflow is (thus handled better with a branch).
+			assume(self.value < NEG_ORDER - 1 && rhs.value > P);
+			branch_hint();
+			diff -= NEG_ORDER; // Cannot underflow.
 		}
 		Self::new(diff)
 	}
@@ -208,7 +253,7 @@ impl Neg for Goldilocks {
 impl Mul for Goldilocks {
 	type Output = Self;
 
-	#[inline]
+	#[inline(always)]
 	fn mul(self, rhs: Self) -> Self {
 		reduce128(u128::from(self.value) * u128::from(rhs.value))
 	}
@@ -236,7 +281,7 @@ impl Sum for Goldilocks {
 /// Reduce a u128 to a Goldilocks field element.
 ///
 /// The result might not be in canonical form; it could be between P and 2^64.
-#[inline]
+#[inline(always)]
 fn reduce128(x: u128) -> Goldilocks {
 	let (x_lo, x_hi) = split(x);
 	let x_hi_hi = x_hi >> 32;
@@ -244,10 +289,11 @@ fn reduce128(x: u128) -> Goldilocks {
 
 	let (mut t0, borrow) = x_lo.overflowing_sub(x_hi_hi);
 	if borrow {
+		branch_hint(); // A borrow is exceedingly rare. It is faster to branch.
 		t0 -= NEG_ORDER; // Cannot underflow
 	}
 	let t1 = x_hi_lo * NEG_ORDER;
-	let t2 = add_no_canonicalize(t0, t1);
+	let t2 = unsafe { add_no_canonicalize_trashing_input(t0, t1) };
 	Goldilocks::new(t2)
 }
 
@@ -262,7 +308,29 @@ const fn split(x: u128) -> (u64, u64) {
 /// # Safety
 /// Only correct if x + y < 2^64 + P.
 #[inline(always)]
-fn add_no_canonicalize(x: u64, y: u64) -> u64 {
+#[cfg(target_arch = "x86_64")]
+unsafe fn add_no_canonicalize_trashing_input(x: u64, y: u64) -> u64 {
+	let res_wrapped: u64;
+	let adjustment: u64;
+	unsafe {
+		core::arch::asm!(
+			"add {0}, {1}",
+			"sbb {1:e}, {1:e}",
+			inlateout(reg) x => res_wrapped,
+			inlateout(reg) y => adjustment,
+			options(pure, nomem, nostack),
+		);
+	}
+	res_wrapped + adjustment
+}
+
+/// Fast addition modulo P (result may be non-canonical).
+///
+/// # Safety
+/// Only correct if x + y < 2^64 + P.
+#[inline(always)]
+#[cfg(not(target_arch = "x86_64"))]
+unsafe fn add_no_canonicalize_trashing_input(x: u64, y: u64) -> u64 {
 	let (res_wrapped, carry) = x.overflowing_add(y);
 	res_wrapped + NEG_ORDER * u64::from(carry)
 }
