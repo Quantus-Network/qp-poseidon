@@ -194,10 +194,12 @@ impl Add for Goldilocks {
 		let (sum, over) = self.value.overflowing_add(rhs.value);
 		let (mut sum, over) = sum.overflowing_add(u64::from(over) * NEG_ORDER);
 		if over {
-			// NB: self.value > P && rhs.value > P is necessary but not sufficient for double-overflow.
-			// This assume does two things:
-			//  1. If compiler knows that either self.value or rhs.value <= P, then it can skip this check.
-			//  2. Hints to the compiler how rare this double-overflow is (thus handled better with a branch).
+			// NB: self.value > P && rhs.value > P is necessary but not sufficient for
+			// double-overflow. This assume does two things:
+			//  1. If compiler knows that either self.value or rhs.value <= P, then it can skip this
+			//     check.
+			//  2. Hints to the compiler how rare this double-overflow is (thus handled better with
+			//     a branch).
 			assume(self.value > P && rhs.value > P);
 			branch_hint();
 			sum += NEG_ORDER; // Cannot overflow.
@@ -221,11 +223,12 @@ impl Sub for Goldilocks {
 		let (diff, under) = self.value.overflowing_sub(rhs.value);
 		let (mut diff, under) = diff.overflowing_sub(u64::from(under) * NEG_ORDER);
 		if under {
-			// NB: self.value < NEG_ORDER - 1 && rhs.value > P is necessary but not sufficient for double-underflow.
-			// This assume does two things:
-			//  1. If compiler knows that either self.value >= NEG_ORDER - 1 or rhs.value <= P,
-			//     then it can skip this check.
-			//  2. Hints to the compiler how rare this double-underflow is (thus handled better with a branch).
+			// NB: self.value < NEG_ORDER - 1 && rhs.value > P is necessary but not sufficient for
+			// double-underflow. This assume does two things:
+			//  1. If compiler knows that either self.value >= NEG_ORDER - 1 or rhs.value <= P, then
+			//     it can skip this check.
+			//  2. Hints to the compiler how rare this double-underflow is (thus handled better with
+			//     a branch).
 			assume(self.value < NEG_ORDER - 1 && rhs.value > P);
 			branch_hint();
 			diff -= NEG_ORDER; // Cannot underflow.

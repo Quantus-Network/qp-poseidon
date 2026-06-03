@@ -9,8 +9,10 @@
 //!
 //! This ensures the two classes are distinguishable before timing analysis begins.
 
-use dudect_bencher::rand::{Rng, RngCore};
-use dudect_bencher::{BenchRng, Class, CtRunner};
+use dudect_bencher::{
+	rand::{Rng, RngCore},
+	BenchRng, Class, CtRunner,
+};
 use qp_poseidon_core::{serialization::bytes_to_felts, *};
 
 // Test sizes in bytes
