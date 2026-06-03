@@ -1,15 +1,37 @@
-[workspace]
-resolver = "2"
-members = ["core"]
-
-[workspace.package]
+[package]
+name = "qp-poseidon-core"
 version = "2.0.2"
 authors = ["Quantus Network Developers <hello@quantus.com>"]
 homepage = "https://quantus.com"
 repository = "https://github.com/Quantus-Network/qp-poseidon"
 license = "MIT-0"
 edition = "2021"
+description = "Self-contained Poseidon2 hash core over Goldilocks"
+keywords = [
+	"cryptography",
+	"hash-functions",
+	"no-std",
+	"poseidon2",
+	"quantus-network",
+]
+categories = ["cryptography", "no-std"]
 
-[workspace.dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
+[dependencies]
+dudect-bencher = { version = "0.6", optional = true }
+
+[dev-dependencies]
 hex = "0.4.3"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[features]
+default = []
+std = []
+ct-testing = ["dudect-bencher", "std"]
+
+[[bin]]
+name = "ct_bench"
+required-features = ["ct-testing"]
+
+[[bench]]
+name = "poseidon_benchmarks"
+harness = false
