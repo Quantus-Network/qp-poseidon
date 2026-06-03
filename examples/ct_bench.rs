@@ -84,7 +84,6 @@ fn disrupt_cache(rng: &mut BenchRng) {
 }
 
 /// Test hash_bytes with small inputs (32 bytes)
-
 fn test_hash_bytes_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(SMALL_INPUT_SIZE, rng);
@@ -106,7 +105,6 @@ fn test_hash_bytes_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 }
 
 /// Test hash_bytes with medium inputs (256 bytes)
-
 fn test_hash_bytes_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE, rng);
@@ -128,7 +126,6 @@ fn test_hash_bytes_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 }
 
 /// Test hash_bytes with large inputs (1KB)
-
 fn test_hash_bytes_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(LARGE_INPUT_SIZE, rng);
@@ -150,7 +147,6 @@ fn test_hash_bytes_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 }
 
 /// Test hash_bytes with extra large inputs (4KB)
-
 fn test_hash_bytes_xlarge_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(EXTRA_LARGE_INPUT_SIZE, rng);
@@ -172,7 +168,6 @@ fn test_hash_bytes_xlarge_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 }
 
 /// Test hash_variable_length_bytes with small inputs (32 bytes)
-
 fn test_hash_variable_length_bytes_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(SMALL_INPUT_SIZE, rng);
@@ -194,7 +189,6 @@ fn test_hash_variable_length_bytes_small_ct(runner: &mut CtRunner, rng: &mut Ben
 }
 
 /// Test hash_variable_length_bytes with medium inputs (256 bytes)
-
 fn test_hash_variable_length_bytes_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE, rng);
@@ -216,7 +210,6 @@ fn test_hash_variable_length_bytes_medium_ct(runner: &mut CtRunner, rng: &mut Be
 }
 
 /// Test hash_variable_length_bytes with large inputs (1KB)
-
 fn test_hash_variable_length_bytes_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(LARGE_INPUT_SIZE, rng);
@@ -238,7 +231,6 @@ fn test_hash_variable_length_bytes_large_ct(runner: &mut CtRunner, rng: &mut Ben
 }
 
 /// Test the core Poseidon2 permutation with fixed state patterns
-
 fn test_poseidon2_permutation_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	let poseidon = Poseidon2::new();
 
@@ -270,7 +262,6 @@ fn test_poseidon2_permutation_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 }
 
 /// Test hash_squeeze_twice with small inputs (32 bytes)
-
 fn test_hash_squeeze_twice_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(SMALL_INPUT_SIZE, rng);
@@ -292,7 +283,6 @@ fn test_hash_squeeze_twice_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 }
 
 /// Test hash_squeeze_twice with medium inputs (256 bytes)
-
 fn test_hash_squeeze_twice_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE, rng);
@@ -314,7 +304,6 @@ fn test_hash_squeeze_twice_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) 
 }
 
 /// Test hash_squeeze_twice with large inputs (1KB)
-
 fn test_hash_squeeze_twice_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(LARGE_INPUT_SIZE, rng);
@@ -336,7 +325,6 @@ fn test_hash_squeeze_twice_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 }
 
 /// Test field element absorption with small inputs
-
 fn test_field_absorption_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(SMALL_INPUT_SIZE, rng);
@@ -358,7 +346,6 @@ fn test_field_absorption_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 }
 
 /// Test field element absorption with medium inputs
-
 fn test_field_absorption_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE, rng);
@@ -380,7 +367,6 @@ fn test_field_absorption_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 }
 
 /// Test field element absorption with large inputs
-
 fn test_field_absorption_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(LARGE_INPUT_SIZE, rng);
@@ -402,7 +388,6 @@ fn test_field_absorption_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 }
 
 /// Test double hashing with small field element inputs
-
 fn test_double_hash_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_felts = generate_fixed_felt_input(SMALL_FELT_COUNT, rng);
@@ -424,7 +409,6 @@ fn test_double_hash_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 }
 
 /// Test double hashing with medium field element inputs
-
 fn test_double_hash_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_felts = generate_fixed_felt_input(MEDIUM_FELT_COUNT, rng);
@@ -446,7 +430,6 @@ fn test_double_hash_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 }
 
 /// Test hash_variable_length with small field element inputs
-
 fn test_hash_variable_length_felts_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_felts = generate_fixed_felt_input(SMALL_FELT_COUNT, rng);
@@ -468,7 +451,6 @@ fn test_hash_variable_length_felts_small_ct(runner: &mut CtRunner, rng: &mut Ben
 }
 
 /// Test hash_variable_length with medium field element inputs
-
 fn test_hash_variable_length_felts_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_felts = generate_fixed_felt_input(MEDIUM_FELT_COUNT, rng);
@@ -490,7 +472,6 @@ fn test_hash_variable_length_felts_medium_ct(runner: &mut CtRunner, rng: &mut Be
 }
 
 /// Test hash_variable_length with large field element inputs
-
 fn test_hash_variable_length_felts_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_felts = generate_fixed_felt_input(LARGE_FELT_COUNT, rng);
@@ -512,7 +493,6 @@ fn test_hash_variable_length_felts_large_ct(runner: &mut CtRunner, rng: &mut Ben
 }
 
 /// Test double hashing with large field element inputs
-
 fn test_double_hash_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_felts = generate_fixed_felt_input(LARGE_FELT_COUNT, rng);
@@ -534,7 +514,6 @@ fn test_double_hash_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 }
 
 /// Test single byte edge cases with fixed vs random patterns
-
 fn test_single_byte_edge_cases_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_byte = rng.gen::<u8>();
@@ -560,7 +539,6 @@ fn test_single_byte_edge_cases_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 }
 
 /// Integration test with medium-sized inputs combining multiple operations
-
 fn test_integrated_operations_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 	// Generate the fixed input once for all Left class samples
 	let fixed_input = generate_fixed_byte_input(MEDIUM_INPUT_SIZE, rng);
