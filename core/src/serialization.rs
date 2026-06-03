@@ -12,9 +12,8 @@
 //! The 8-bytes/felt encoding is used only for hash outputs (which are already field elements).
 
 use alloc::{string::String, vec::Vec};
-use p3_field::{integers::QuotientMap, PrimeField64};
-use p3_goldilocks::Goldilocks;
-use qp_poseidon_constants::POSEIDON2_OUTPUT;
+
+use crate::{goldilocks::Goldilocks, poseidon2::POSEIDON2_OUTPUT};
 
 const BIT_32_LIMB_MASK: u64 = 0xFFFF_FFFF;
 
@@ -37,7 +36,7 @@ pub const BYTES_PER_FELT: usize = 4;
 
 #[inline]
 fn from_u64(x: u64) -> Goldilocks {
-	Goldilocks::from_int(x)
+	Goldilocks::from_u64(x)
 }
 
 #[inline]
@@ -259,14 +258,11 @@ pub fn digest_to_bytes(input: &[Goldilocks; POSEIDON2_OUTPUT]) -> BytesDigest {
 ///
 /// Each 8-byte chunk becomes one field element.
 /// Use this to deserialize hash outputs from storage.
-pub fn bytes_to_digest<F>(input: &BytesDigest) -> [F; POSEIDON2_OUTPUT]
-where
-	F: p3_field::PrimeCharacteristicRing,
-{
+pub fn bytes_to_digest(input: &BytesDigest) -> [Goldilocks; POSEIDON2_OUTPUT] {
 	core::array::from_fn(|i| {
 		let start = i * 8;
 		let bytes: [u8; 8] = input[start..start + 8].try_into().expect("8 bytes");
-		F::from_u64(u64::from_le_bytes(bytes))
+		Goldilocks::from_u64(u64::from_le_bytes(bytes))
 	})
 }
 
@@ -413,8 +409,8 @@ mod tests {
 	#[test]
 	fn test_malformed_bytes_input_error_cases() {
 		let malformed_cases: Vec<Vec<Goldilocks>> = vec![
-			vec![Goldilocks::from_int(0x12345678_i64), Goldilocks::from_int(0x1ABCDEF0_i64)],
-			vec![Goldilocks::from_int(0x12345678_i64), Goldilocks::from_int(0x00000002_i64)],
+			vec![Goldilocks::from_u64(0x12345678), Goldilocks::from_u64(0x1ABCDEF0)],
+			vec![Goldilocks::from_u64(0x12345678), Goldilocks::from_u64(0x00000002)],
 		];
 
 		for malformed_felts in &malformed_cases {
@@ -425,8 +421,7 @@ mod tests {
 
 	#[test]
 	fn test_felt_width_error_handling() {
-		let invalid_felts =
-			[Goldilocks::from_int(0x1_0000_0000_i64), Goldilocks::from_int(0xFFFFFFFF_i64)];
+		let invalid_felts = [Goldilocks::from_u64(0x1_0000_0000), Goldilocks::from_u64(0xFFFFFFFF)];
 		let result = try_felts_to_u64(invalid_felts);
 		assert!(result.is_err(), "Expected felt width error for invalid felts");
 	}
@@ -473,7 +468,7 @@ mod tests {
 
 		// Should be little-endian u64
 		let expected = u64::from_le_bytes(input);
-		assert_eq!(felts[0], Goldilocks::from_int(expected));
+		assert_eq!(felts[0], Goldilocks::from_u64(expected));
 	}
 
 	#[test]

@@ -21,9 +21,6 @@
 use dudect_bencher::rand::{Rng, RngCore};
 #[cfg(feature = "dudect-bencher")]
 use dudect_bencher::{BenchRng, Class, CtRunner};
-use p3_field::{integers::QuotientMap, PrimeCharacteristicRing, PrimeField64};
-use p3_goldilocks::Goldilocks;
-use p3_symmetric::Permutation;
 use qp_poseidon_core::{serialization::bytes_to_felts, *};
 
 // Test sizes in bytes
@@ -54,8 +51,7 @@ fn generate_random_byte_input(size: usize, rng: &mut BenchRng) -> Vec<u8> {
 /// Generate a fixed field element input for Left class (same for all samples)
 fn generate_fixed_felt_input(count: usize, rng: &mut BenchRng) -> Vec<Goldilocks> {
 	// Always use ZERO for the fixed input
-	let val = rng.next_u64() % Goldilocks::ORDER_U64;
-	let felt = Goldilocks::from_int(val);
+	let felt = Goldilocks::from_u64(rng.next_u64());
 	vec![felt; count]
 }
 
@@ -63,8 +59,7 @@ fn generate_fixed_felt_input(count: usize, rng: &mut BenchRng) -> Vec<Goldilocks
 fn generate_random_felt_input(count: usize, rng: &mut BenchRng) -> Vec<Goldilocks> {
 	let mut random_input = Vec::with_capacity(count);
 	for _ in 0..count {
-		let val = rng.next_u64() % Goldilocks::ORDER_U64;
-		random_input.push(Goldilocks::from_int(val));
+		random_input.push(Goldilocks::from_u64(rng.next_u64()));
 	}
 	random_input
 }
@@ -255,21 +250,20 @@ fn test_hash_variable_length_bytes_large_ct(runner: &mut CtRunner, rng: &mut Ben
 /// Test the core Poseidon2 permutation with fixed state patterns
 #[cfg(feature = "dudect-bencher")]
 fn test_poseidon2_permutation_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
-	let poseidon = qp_poseidon_constants::create_poseidon();
+	let poseidon = Poseidon2::new();
 
 	// Generate the fixed state once for all Left class samples
-	let fixed_value = Goldilocks::from_int(rng.next_u64() % Goldilocks::ORDER_U64);
-	let fixed_state = [fixed_value; 12];
+	let fixed_value = Goldilocks::from_u64(rng.next_u64());
+	let fixed_state = [fixed_value; SPONGE_WIDTH];
 
 	for _ in 0..10_000 {
 		let class = if rng.gen::<bool>() { Class::Left } else { Class::Right };
 		let state = match class {
 			Class::Left => fixed_state,
 			Class::Right => {
-				let mut random_state = [Goldilocks::ZERO; 12];
+				let mut random_state = [Goldilocks::ZERO; SPONGE_WIDTH];
 				for slot in &mut random_state {
-					let val = rng.next_u64() % Goldilocks::ORDER_U64;
-					*slot = Goldilocks::from_int(val);
+					*slot = Goldilocks::from_u64(rng.next_u64());
 				}
 				random_state
 			},
