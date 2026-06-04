@@ -2,19 +2,18 @@
 
 extern crate alloc;
 
-use qp_poseidon_constants as constants;
-
+pub mod goldilocks;
+pub mod poseidon2;
 pub mod serialization;
 
+pub use goldilocks::Goldilocks;
+pub use poseidon2::{Poseidon2, POSEIDON2_OUTPUT, SPONGE_CAPACITY, SPONGE_RATE, SPONGE_WIDTH};
+
 use crate::serialization::bytes_to_felts;
-use p3_field::PrimeCharacteristicRing;
-use p3_goldilocks::{Goldilocks, Poseidon2Goldilocks};
-use p3_symmetric::Permutation;
-use qp_poseidon_constants::{POSEIDON2_OUTPUT, SPONGE_RATE, SPONGE_WIDTH};
 
 // Internal state for Poseidon2 hashing
 struct Poseidon2State {
-	poseidon2: Poseidon2Goldilocks<SPONGE_WIDTH>,
+	poseidon2: Poseidon2,
 	state: [Goldilocks; SPONGE_WIDTH],
 	buf: [Goldilocks; SPONGE_RATE],
 	buf_len: usize,
@@ -23,7 +22,7 @@ struct Poseidon2State {
 impl Poseidon2State {
 	fn new() -> Self {
 		Self {
-			poseidon2: constants::create_poseidon(),
+			poseidon2: Poseidon2::new(),
 			state: [Goldilocks::ZERO; SPONGE_WIDTH],
 			buf: [Goldilocks::ZERO; SPONGE_RATE],
 			buf_len: 0,
@@ -166,7 +165,6 @@ mod tests {
 	use super::*;
 	use crate::alloc::string::ToString;
 	use alloc::{format, vec, vec::Vec};
-	use p3_field::PrimeField64;
 
 	#[test]
 	fn test_empty_input() {
@@ -236,8 +234,7 @@ mod tests {
 	#[test]
 	fn test_big_preimage() {
 		for overflow in 1..=10 {
-			let preimage =
-				(<p3_goldilocks::Goldilocks as PrimeField64>::ORDER_U64 + overflow).to_le_bytes();
+			let preimage = (goldilocks::P + overflow).to_le_bytes();
 			let _hash = hash_bytes(&preimage);
 		}
 	}
@@ -507,8 +504,6 @@ mod tests {
 	/// These ensure hash chaining operations remain stable across versions.
 	#[test]
 	fn test_hash_twice_vectors() {
-		use p3_field::PrimeCharacteristicRing;
-
 		// hash_twice test vectors (input felts -> output bytes)
 		// Empty input
 		let empty: Vec<Goldilocks> = vec![];
