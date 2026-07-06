@@ -88,14 +88,17 @@ pub fn u128_to_felts(num: u128) -> [Goldilocks; FELTS_PER_U128] {
 	result
 }
 
-pub fn u128_to_quantized_felt(num: u128) -> Goldilocks {
+/// Quantize an amount and convert it to a field element.
+///
+/// Divides by [`AMOUNT_QUANTIZATION_FACTOR`] and returns an error if the quantized
+/// value does not fit a 32-bit limb. Inverse of [`try_felt_to_quantized_u128`].
+pub fn try_u128_to_quantized_felt(num: u128) -> Result<Goldilocks, String> {
 	let quantized = num / AMOUNT_QUANTIZATION_FACTOR;
-	assert!(
-		quantized <= BIT_32_LIMB_MASK as u128,
-		"Quantized value {} exceeds 32-bit limb size",
-		quantized
-	);
-	from_u64(quantized as u64)
+	if quantized <= BIT_32_LIMB_MASK as u128 {
+		Ok(from_u64(quantized as u64))
+	} else {
+		Err(alloc::format!("Quantized value {} exceeds 32-bit limb size", quantized))
+	}
 }
 
 pub fn u64_to_felts(num: u64) -> [Goldilocks; FELTS_PER_U64] {
@@ -472,7 +475,7 @@ mod tests {
 		let test_values = vec![0u128, 1_000_000_000_000u128, 21_000_000_000_000_000_000u128];
 
 		for &original in &test_values {
-			let felt = u128_to_quantized_felt(original);
+			let felt = try_u128_to_quantized_felt(original).unwrap();
 			let reconstructed = try_felt_to_quantized_u128(felt).unwrap();
 			let expected = original - (original % AMOUNT_QUANTIZATION_FACTOR);
 			assert_eq!(reconstructed, expected);
@@ -480,10 +483,11 @@ mod tests {
 	}
 
 	#[test]
-	#[should_panic(expected = "exceeds 32-bit limb size")]
-	fn test_u128_to_quantized_felt_panics_when_quantized_exceeds_32bit() {
+	fn test_try_u128_to_quantized_felt_rejects_oversized_value() {
 		let just_over = (BIT_32_LIMB_MASK as u128 + 1) * AMOUNT_QUANTIZATION_FACTOR;
-		let _ = u128_to_quantized_felt(just_over);
+		let result = try_u128_to_quantized_felt(just_over);
+		assert!(result.is_err(), "quantized value above 32-bit limb should be rejected");
+		assert!(result.unwrap_err().contains("exceeds 32-bit limb size"));
 	}
 
 	#[test]
