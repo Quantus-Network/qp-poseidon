@@ -2,6 +2,16 @@
 
 This project uses [dudect-bencher](https://github.com/rozbb/dudect-bencher) to test whether the Poseidon2 hash functions execute in constant time, preventing timing side-channel attacks.
 
+## Scope of the guarantee
+
+These tests provide *empirical* evidence of constant-time behavior, not a proof. The
+underlying `Goldilocks` field arithmetic contains rare carry/borrow correction branches
+(in `add`, `sub`, and `reduce128`, deliberately shaped by `branch_hint`) that depend on
+operand values. They fire only when intermediate values land near or above the modulus,
+which is why dudect measurements show no stable timing distinguisher — but strictly
+speaking the code is not branch-free. Treat passing t-scores as "no measurable leakage
+in this environment", not as a hard constant-time guarantee.
+
 ## Quick Start
 
 Run all constant-time tests:

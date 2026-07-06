@@ -62,7 +62,7 @@ let chained = rehash_to_bytes(&hash).unwrap();
 - **Injective encoding**: `hash_bytes` is collision-resistant for any input length
 - **Compact encoding**: Only use `bytes_to_felts_compact` for fixed-size inputs (e.g., in ZK circuits where input size is constrained)
 - **Canonical decoding**: `bytes_to_digest`, `rehash_to_bytes`, and `bytes_to_felts_compact` reject 8-byte limbs that encode values `>= P`, preventing byte-distinct inputs from aliasing to the same field elements
-- **Constant-time**: Core hashing has no input-dependent branches; timing tests pass with dudect t-scores < 5
+- **Timing behavior**: Empirical dudect timing tests show no measurable input-dependent timing (t-scores < 5); see `CONSTANT_TIME_TESTING.md`. Note that the field arithmetic is not strictly branch-free: `Goldilocks` add/sub/reduce take rare carry/borrow correction branches (inherited from the standard optimized Goldilocks implementation) that fire only for values near the modulus. Do not rely on this crate for hard constant-time guarantees on secret inputs.
 - **No padding vulnerabilities**: Removed legacy padded hashing functions that had audit issues
 
 ## License
