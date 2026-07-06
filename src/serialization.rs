@@ -203,7 +203,17 @@ impl<'a> Iterator for BytesToU64sIter<'a> {
 		last[remainder.len()] = 1u8;
 		Some(u32::from_le_bytes(last) as u64)
 	}
+
+	fn size_hint(&self) -> (usize, Option<usize>) {
+		// Remaining full 4-byte chunks, plus the terminator word (which also
+		// carries any final partial chunk) if not yet emitted.
+		let remaining = (self.input.len() - self.pos) / BYTES_PER_FELT
+			+ usize::from(!self.emitted_terminator);
+		(remaining, Some(remaining))
+	}
 }
+
+impl ExactSizeIterator for BytesToU64sIter<'_> {}
 
 /// Lazily encode bytes into u64 limbs (4 bytes per element + terminator).
 pub fn bytes_to_u64s_iter(input: &[u8]) -> BytesToU64sIter<'_> {
@@ -326,6 +336,26 @@ pub fn bytes_to_digest(
 	Ok(out)
 }
 
+/// Convert 32 bytes to a digest (4 field elements), **reducing non-canonical limbs**.
+///
+/// Each 8-byte chunk is interpreted as a `u64` and mapped into the field, where
+/// values `>= P` reduce to `value - P`. This map is **NOT injective**: byte-distinct
+/// inputs can decode to identical field elements and therefore hash identically
+/// downstream. Unlike [`bytes_to_digest`], it never fails.
+///
+/// Use this only where a lossy commitment is explicitly acceptable — e.g. binding
+/// non-field data (such as Blake2 hashes) into a Poseidon preimage where rare
+/// aliasing (~2^-32 per limb) is tolerable and the conversion must be infallible.
+/// For anything relying on uniqueness of the input bytes (deduplication,
+/// authorization, replay prevention), use [`bytes_to_digest`] instead.
+pub fn bytes_to_digest_lossy(input: &BytesDigest) -> [Goldilocks; POSEIDON2_OUTPUT] {
+	core::array::from_fn(|i| {
+		let start = i * DIGEST_BYTES_PER_ELEMENT;
+		let bytes: [u8; 8] = input[start..start + 8].try_into().expect("8 bytes");
+		Goldilocks::from_u64(u64::from_le_bytes(bytes))
+	})
+}
+
 // ============================================================================
 // Compact encoding (8 bytes/felt) for variable-length data
 // ============================================================================
@@ -428,6 +458,27 @@ mod tests {
 			let felts = bytes_to_felts(&original);
 			let reconstructed = felts_to_bytes(&felts).unwrap();
 			assert_eq!(original, reconstructed);
+		}
+	}
+
+	#[test]
+	fn test_bytes_to_u64s_iter_reports_exact_size() {
+		for input_len in 0..=17 {
+			let input = vec![0xA5u8; input_len];
+			let mut iter = bytes_to_u64s_iter(&input);
+
+			let expected_len = (input_len + 1).div_ceil(BYTES_PER_FELT);
+			assert_eq!(iter.len(), expected_len, "input len {input_len}");
+			assert_eq!(iter.size_hint(), (expected_len, Some(expected_len)));
+
+			// The hint must stay exact as the iterator is consumed.
+			let mut remaining = expected_len;
+			while iter.next().is_some() {
+				remaining -= 1;
+				assert_eq!(iter.len(), remaining, "input len {input_len}");
+			}
+			assert_eq!(remaining, 0);
+			assert_eq!(iter.size_hint(), (0, Some(0)));
 		}
 	}
 
@@ -572,6 +623,24 @@ mod tests {
 		digest[..8].copy_from_slice(&P.to_le_bytes());
 		let result = bytes_to_digest(&digest);
 		assert_eq!(result, Err("Digest limb exceeds Goldilocks modulus"));
+	}
+
+	#[test]
+	fn test_bytes_to_digest_lossy_matches_strict_on_canonical_input() {
+		let digest = [42u8; 32];
+		assert_eq!(bytes_to_digest_lossy(&digest), bytes_to_digest(&digest).unwrap());
+	}
+
+	#[test]
+	fn test_bytes_to_digest_lossy_reduces_non_canonical_limb() {
+		// The lossy variant deliberately accepts non-canonical limbs, reducing
+		// them mod P: a limb of P aliases with a limb of 0. This documents the
+		// non-injectivity that callers of the lossy API are opting into.
+		let canonical = [0u8; 32];
+		let mut aliased = canonical;
+		aliased[..8].copy_from_slice(&P.to_le_bytes());
+
+		assert_eq!(bytes_to_digest_lossy(&aliased), bytes_to_digest_lossy(&canonical));
 	}
 
 	#[test]

@@ -54,6 +54,7 @@ let chained = rehash_to_bytes(&hash).unwrap();
 | `bytes_to_felts(&[u8])` | Injective encoding: 4 bytes/felt + terminator |
 | `bytes_to_felts_compact(&[u8])` | Compact encoding: 8 bytes/felt (fixed-size inputs only; errors on non-canonical limbs) |
 | `bytes_to_digest(&[u8; 32])` | Decode 32 bytes as 4 field elements (errors on non-canonical limbs) |
+| `bytes_to_digest_lossy(&[u8; 32])` | Infallible decode that reduces non-canonical limbs mod P (NOT injective; lossy commitments only) |
 | `digest_to_bytes(&[Goldilocks; 4])` | Encode 4 field elements as 32 bytes |
 | `string_to_felts(&str)` | Encode string as field elements |
 
