@@ -75,13 +75,20 @@ unsafe impl GlobalAlloc for TrackingAllocator {
 }
 
 /// Runs `f` and returns its result plus the peak heap growth (in bytes) observed while it ran.
-/// Caller must hold `MEASURE_LOCK`.
-fn measure_peak_delta<T>(f: impl FnOnce() -> T) -> (T, usize) {
-	let baseline = CURRENT_ALLOCATED.load(SeqCst);
-	PEAK_ALLOCATED.store(baseline, SeqCst);
-	let result = f();
-	let peak = PEAK_ALLOCATED.load(SeqCst);
-	(result, peak.saturating_sub(baseline))
+/// Caller must hold `MEASURE_LOCK`. Takes the minimum over several runs: `f` is deterministic,
+/// so the minimum converges to its true peak while filtering out concurrent allocations from
+/// libtest harness threads.
+fn measure_peak_delta<T>(f: impl Fn() -> T) -> (T, usize) {
+	let mut best_peak = usize::MAX;
+	let mut result = None;
+	for _ in 0..5 {
+		let baseline = CURRENT_ALLOCATED.load(SeqCst);
+		PEAK_ALLOCATED.store(baseline, SeqCst);
+		result = Some(f());
+		let peak = PEAK_ALLOCATED.load(SeqCst);
+		best_peak = best_peak.min(peak.saturating_sub(baseline));
+	}
+	(result.expect("ran at least once"), best_peak)
 }
 
 const INPUT_LEN: usize = 256 * 1024;
