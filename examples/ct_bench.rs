@@ -9,6 +9,8 @@
 //!
 //! This ensures the two classes are distinguishable before timing analysis begins.
 
+use std::hint::black_box;
+
 use dudect_bencher::{
 	rand::{Rng, RngCore},
 	BenchRng, Class, CtRunner,
@@ -99,7 +101,7 @@ fn test_hash_bytes_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_bytes(&input);
+			black_box(hash_bytes(black_box(&input)));
 		});
 	}
 }
@@ -120,7 +122,7 @@ fn test_hash_bytes_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_bytes(&input);
+			black_box(hash_bytes(black_box(&input)));
 		});
 	}
 }
@@ -141,7 +143,7 @@ fn test_hash_bytes_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_bytes(&input);
+			black_box(hash_bytes(black_box(&input)));
 		});
 	}
 }
@@ -162,7 +164,7 @@ fn test_hash_bytes_xlarge_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_bytes(&input);
+			black_box(hash_bytes(black_box(&input)));
 		});
 	}
 }
@@ -183,7 +185,7 @@ fn test_hash_variable_length_bytes_small_ct(runner: &mut CtRunner, rng: &mut Ben
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_bytes(&input);
+			black_box(hash_bytes(black_box(&input)));
 		});
 	}
 }
@@ -204,7 +206,7 @@ fn test_hash_variable_length_bytes_medium_ct(runner: &mut CtRunner, rng: &mut Be
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_bytes(&input);
+			black_box(hash_bytes(black_box(&input)));
 		});
 	}
 }
@@ -225,7 +227,7 @@ fn test_hash_variable_length_bytes_large_ct(runner: &mut CtRunner, rng: &mut Ben
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_bytes(&input);
+			black_box(hash_bytes(black_box(&input)));
 		});
 	}
 }
@@ -255,8 +257,9 @@ fn test_poseidon2_permutation_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let mut state_copy = state;
+			let mut state_copy = black_box(state);
 			poseidon.permute_mut(&mut state_copy);
+			black_box(state_copy);
 		});
 	}
 }
@@ -277,7 +280,7 @@ fn test_hash_squeeze_twice_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_squeeze_twice(&input);
+			black_box(hash_squeeze_twice(black_box(&input)));
 		});
 	}
 }
@@ -298,7 +301,7 @@ fn test_hash_squeeze_twice_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) 
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_squeeze_twice(&input);
+			black_box(hash_squeeze_twice(black_box(&input)));
 		});
 	}
 }
@@ -319,7 +322,7 @@ fn test_hash_squeeze_twice_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_squeeze_twice(&input);
+			black_box(hash_squeeze_twice(black_box(&input)));
 		});
 	}
 }
@@ -340,7 +343,7 @@ fn test_field_absorption_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _felts: Vec<Goldilocks> = bytes_to_felts(&input);
+			black_box::<Vec<Goldilocks>>(bytes_to_felts(black_box(&input)));
 		});
 	}
 }
@@ -361,7 +364,7 @@ fn test_field_absorption_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _felts: Vec<Goldilocks> = bytes_to_felts(&input);
+			black_box::<Vec<Goldilocks>>(bytes_to_felts(black_box(&input)));
 		});
 	}
 }
@@ -382,7 +385,7 @@ fn test_field_absorption_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _felts: Vec<Goldilocks> = bytes_to_felts(&input);
+			black_box::<Vec<Goldilocks>>(bytes_to_felts(black_box(&input)));
 		});
 	}
 }
@@ -403,7 +406,7 @@ fn test_double_hash_small_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_twice(&felts);
+			black_box(hash_twice(black_box(&felts)));
 		});
 	}
 }
@@ -424,7 +427,7 @@ fn test_double_hash_medium_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_twice(&felts);
+			black_box(hash_twice(black_box(&felts)));
 		});
 	}
 }
@@ -445,7 +448,7 @@ fn test_hash_variable_length_felts_small_ct(runner: &mut CtRunner, rng: &mut Ben
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_to_bytes(&felts);
+			black_box(hash_to_bytes(black_box(&felts)));
 		});
 	}
 }
@@ -466,7 +469,7 @@ fn test_hash_variable_length_felts_medium_ct(runner: &mut CtRunner, rng: &mut Be
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_to_bytes(&felts);
+			black_box(hash_to_bytes(black_box(&felts)));
 		});
 	}
 }
@@ -487,7 +490,7 @@ fn test_hash_variable_length_felts_large_ct(runner: &mut CtRunner, rng: &mut Ben
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_to_bytes(&felts);
+			black_box(hash_to_bytes(black_box(&felts)));
 		});
 	}
 }
@@ -508,7 +511,7 @@ fn test_double_hash_large_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_twice(&felts);
+			black_box(hash_twice(black_box(&felts)));
 		});
 	}
 }
@@ -533,7 +536,7 @@ fn test_single_byte_edge_cases_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 		disrupt_cache(rng);
 
 		runner.run_one(class, || {
-			let _result = hash_bytes(&input);
+			black_box(hash_bytes(black_box(&input)));
 		});
 	}
 }
@@ -555,11 +558,11 @@ fn test_integrated_operations_ct(runner: &mut CtRunner, rng: &mut BenchRng) {
 
 		runner.run_one(class, || {
 			// Test a sequence of operations that might be used together
-			let hash = hash_bytes(&input);
+			let hash = hash_bytes(black_box(&input));
 			// Chain with rehash (tests bytes -> felts -> hash path).
 			// Library-produced digests are always canonical, so this cannot fail.
-			let _rehash = rehash_to_bytes(&hash).expect("canonical digest");
-			let _squeeze = hash_squeeze_twice(&input);
+			black_box(rehash_to_bytes(&hash).expect("canonical digest"));
+			black_box(hash_squeeze_twice(black_box(&input)));
 		});
 	}
 }
