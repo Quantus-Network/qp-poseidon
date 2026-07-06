@@ -272,14 +272,19 @@ pub fn digest_to_u64s(input: &BytesDigest) -> [u64; DIGEST_NUM_FELTS] {
 }
 
 /// Convert 8 u64 values to 32-byte digest (inverse of `digest_to_u64s`).
-pub fn u64s_to_digest(input: &[u64; DIGEST_NUM_FELTS]) -> BytesDigest {
+///
+/// Each limb occupies 4 bytes on the wire, so limbs must fit in 32 bits.
+/// Returns an error for oversized limbs instead of silently truncating them,
+/// which would let distinct limb arrays alias to the same digest.
+pub fn u64s_to_digest(input: &[u64; DIGEST_NUM_FELTS]) -> Result<BytesDigest, &'static str> {
 	let mut bytes = [0u8; 32];
-	for (i, v) in input.iter().enumerate() {
+	for (i, &v) in input.iter().enumerate() {
+		let _ = as_32_bit_limb_u64(v, i).map_err(|_| "Digest limb exceeds 32 bits")?;
 		let start = i * BYTES_PER_FELT;
 		let end = start + BYTES_PER_FELT;
-		bytes[start..end].copy_from_slice(&(*v as u32).to_le_bytes());
+		bytes[start..end].copy_from_slice(&(v as u32).to_le_bytes());
 	}
-	bytes
+	Ok(bytes)
 }
 
 // ============================================================================
