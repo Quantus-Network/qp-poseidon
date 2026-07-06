@@ -4,8 +4,8 @@
 //!
 //! ## API Overview
 //!
-//! - `bytes_to_felts` / `felts_to_bytes` - Variable-length byte arrays (4 bytes/felt + terminator)
-//!   collision-resistant)
+//! - `bytes_to_felts` / `bytes_to_felts_iter` / `felts_to_bytes` - Variable-length byte arrays (4
+//!   bytes/felt + terminator) collision-resistant)
 //! - `digest_to_bytes` / `bytes_to_digest` - Hash output (4 felts ↔ 32 bytes, 8 bytes/felt)
 //!
 //! The 4-bytes/felt encoding is injective (collision-resistant) for arbitrary byte data.
@@ -13,7 +13,10 @@
 
 use alloc::{string::String, vec::Vec};
 
-use crate::{goldilocks::Goldilocks, poseidon2::POSEIDON2_OUTPUT};
+use crate::{
+	goldilocks::{Goldilocks, P},
+	poseidon2::POSEIDON2_OUTPUT,
+};
 
 const BIT_32_LIMB_MASK: u64 = 0xFFFF_FFFF;
 
@@ -37,6 +40,19 @@ pub const BYTES_PER_FELT: usize = 4;
 #[inline]
 fn from_u64(x: u64) -> Goldilocks {
 	Goldilocks::from_u64(x)
+}
+
+/// Convert a raw u64 limb into a field element, rejecting non-canonical encodings.
+///
+/// Values `>= P` alias with `value - P` inside the field, so accepting them would
+/// let byte-distinct inputs decode to the same field element (collision).
+#[inline]
+fn try_canonical_limb(x: u64, err: &'static str) -> Result<Goldilocks, &'static str> {
+	if x < P {
+		Ok(Goldilocks::from_u64(x))
+	} else {
+		Err(err)
+	}
 }
 
 #[inline]
@@ -72,14 +88,17 @@ pub fn u128_to_felts(num: u128) -> [Goldilocks; FELTS_PER_U128] {
 	result
 }
 
-pub fn u128_to_quantized_felt(num: u128) -> Goldilocks {
+/// Quantize an amount and convert it to a field element.
+///
+/// Divides by [`AMOUNT_QUANTIZATION_FACTOR`] and returns an error if the quantized
+/// value does not fit a 32-bit limb. Inverse of [`try_felt_to_quantized_u128`].
+pub fn try_u128_to_quantized_felt(num: u128) -> Result<Goldilocks, String> {
 	let quantized = num / AMOUNT_QUANTIZATION_FACTOR;
-	assert!(
-		quantized <= BIT_32_LIMB_MASK as u128,
-		"Quantized value {} exceeds 32-bit limb size",
-		quantized
-	);
-	from_u64(quantized as u64)
+	if quantized <= BIT_32_LIMB_MASK as u128 {
+		Ok(from_u64(quantized as u64))
+	} else {
+		Err(alloc::format!("Quantized value {} exceeds 32-bit limb size", quantized))
+	}
 }
 
 pub fn u64_to_felts(num: u64) -> [Goldilocks; FELTS_PER_U64] {
@@ -113,6 +132,15 @@ pub fn try_felts_to_u64(felts: [Goldilocks; FELTS_PER_U64]) -> Result<u64, Strin
 // Variable-length bytes <-> felts
 // ============================================================================
 
+/// Lazily encode bytes into field elements (4 bytes/felt + terminator).
+///
+/// This is the single source of truth for the injective byte encoding. Use this
+/// when you want to consume felts incrementally (e.g. sponge absorption) without
+/// allocating a `Vec`. For an owned vector, use [`bytes_to_felts`].
+pub fn bytes_to_felts_iter(input: &[u8]) -> impl Iterator<Item = Goldilocks> + '_ {
+	bytes_to_u64s_iter(input).map(from_u64)
+}
+
 /// Convert variable-length bytes to field elements.
 ///
 /// Uses 4 bytes per field element with a terminator marker (0x01) appended,
@@ -125,7 +153,7 @@ pub fn try_felts_to_u64(felts: [Goldilocks; FELTS_PER_U64]) -> Result<u64, Strin
 /// assert_eq!(felts.len(), 2); // 5 bytes + terminator = 6 bytes -> ceil(6/4) = 2 felts
 /// ```
 pub fn bytes_to_felts(input: &[u8]) -> Vec<Goldilocks> {
-	bytes_to_u64s(input).into_iter().map(from_u64).collect()
+	bytes_to_felts_iter(input).collect()
 }
 
 /// Convert field elements back to variable-length bytes.
@@ -146,27 +174,55 @@ pub fn string_to_felts(input: &str) -> Vec<Goldilocks> {
 // Core u64-based functions (field-type agnostic)
 // ============================================================================
 
-/// Convert variable-length bytes to u64 values (4 bytes per element + terminator).
-pub fn bytes_to_u64s(input: &[u8]) -> Vec<u64> {
-	let input_len = input.len();
-	let len_with_marker = input_len + 1;
-	let padding_needed = (BYTES_PER_FELT - (len_with_marker % BYTES_PER_FELT)) % BYTES_PER_FELT;
-	let final_padded_size = len_with_marker + padding_needed;
-	let num_elements = final_padded_size / BYTES_PER_FELT;
+/// Iterator over u64 limbs produced by the injective 4-byte encoding.
+pub struct BytesToU64sIter<'a> {
+	input: &'a [u8],
+	pos: usize,
+	emitted_terminator: bool,
+}
 
-	let mut padded_input = Vec::<u8>::with_capacity(final_padded_size);
-	let mut out = Vec::<u64>::with_capacity(num_elements);
+impl<'a> Iterator for BytesToU64sIter<'a> {
+	type Item = u64;
 
-	padded_input.extend_from_slice(input);
-	padded_input.push(1u8); // terminator marker
-	padded_input.resize(final_padded_size, 0u8);
+	fn next(&mut self) -> Option<Self::Item> {
+		if self.pos + BYTES_PER_FELT <= self.input.len() {
+			let chunk = &self.input[self.pos..self.pos + BYTES_PER_FELT];
+			self.pos += BYTES_PER_FELT;
+			let bytes = [chunk[0], chunk[1], chunk[2], chunk[3]];
+			return Some(u32::from_le_bytes(bytes) as u64);
+		}
 
-	for chunk in padded_input.chunks_exact(BYTES_PER_FELT) {
-		let bytes = [chunk[0], chunk[1], chunk[2], chunk[3]];
-		out.push(u32::from_le_bytes(bytes) as u64);
+		if self.emitted_terminator {
+			return None;
+		}
+
+		self.emitted_terminator = true;
+		let remainder = &self.input[self.pos..];
+		let mut last = [0u8; BYTES_PER_FELT];
+		last[..remainder.len()].copy_from_slice(remainder);
+		last[remainder.len()] = 1u8;
+		Some(u32::from_le_bytes(last) as u64)
 	}
 
-	out
+	fn size_hint(&self) -> (usize, Option<usize>) {
+		// Remaining full 4-byte chunks, plus the terminator word (which also
+		// carries any final partial chunk) if not yet emitted.
+		let remaining =
+			(self.input.len() - self.pos) / BYTES_PER_FELT + usize::from(!self.emitted_terminator);
+		(remaining, Some(remaining))
+	}
+}
+
+impl ExactSizeIterator for BytesToU64sIter<'_> {}
+
+/// Lazily encode bytes into u64 limbs (4 bytes per element + terminator).
+pub fn bytes_to_u64s_iter(input: &[u8]) -> BytesToU64sIter<'_> {
+	BytesToU64sIter { input, pos: 0, emitted_terminator: false }
+}
+
+/// Convert variable-length bytes to u64 values (4 bytes per element + terminator).
+pub fn bytes_to_u64s(input: &[u8]) -> Vec<u64> {
+	bytes_to_u64s_iter(input).collect()
 }
 
 /// Convert u64 values back to bytes (inverse of `bytes_to_u64s`).
@@ -226,14 +282,19 @@ pub fn digest_to_u64s(input: &BytesDigest) -> [u64; DIGEST_NUM_FELTS] {
 }
 
 /// Convert 8 u64 values to 32-byte digest (inverse of `digest_to_u64s`).
-pub fn u64s_to_digest(input: &[u64; DIGEST_NUM_FELTS]) -> BytesDigest {
+///
+/// Each limb occupies 4 bytes on the wire, so limbs must fit in 32 bits.
+/// Returns an error for oversized limbs instead of silently truncating them,
+/// which would let distinct limb arrays alias to the same digest.
+pub fn u64s_to_digest(input: &[u64; DIGEST_NUM_FELTS]) -> Result<BytesDigest, &'static str> {
 	let mut bytes = [0u8; 32];
-	for (i, v) in input.iter().enumerate() {
+	for (i, &v) in input.iter().enumerate() {
+		let _ = as_32_bit_limb_u64(v, i).map_err(|_| "Digest limb exceeds 32 bits")?;
 		let start = i * BYTES_PER_FELT;
 		let end = start + BYTES_PER_FELT;
-		bytes[start..end].copy_from_slice(&(*v as u32).to_le_bytes());
+		bytes[start..end].copy_from_slice(&(v as u32).to_le_bytes());
 	}
-	bytes
+	Ok(bytes)
 }
 
 // ============================================================================
@@ -256,11 +317,40 @@ pub fn digest_to_bytes(input: &[Goldilocks; POSEIDON2_OUTPUT]) -> BytesDigest {
 
 /// Convert 32 bytes to a digest (4 field elements).
 ///
-/// Each 8-byte chunk becomes one field element.
+/// Each 8-byte chunk becomes one canonical field element.
+/// Returns an error if any chunk encodes a value greater than or equal to the
+/// Goldilocks modulus, since such values would alias with a canonical element.
 /// Use this to deserialize hash outputs from storage.
-pub fn bytes_to_digest(input: &BytesDigest) -> [Goldilocks; POSEIDON2_OUTPUT] {
+pub fn bytes_to_digest(
+	input: &BytesDigest,
+) -> Result<[Goldilocks; POSEIDON2_OUTPUT], &'static str> {
+	let mut out = [Goldilocks::ZERO; POSEIDON2_OUTPUT];
+	for (i, felt) in out.iter_mut().enumerate() {
+		let start = i * DIGEST_BYTES_PER_ELEMENT;
+		let bytes: [u8; 8] = input[start..start + 8].try_into().expect("8 bytes");
+		*felt = try_canonical_limb(
+			u64::from_le_bytes(bytes),
+			"Digest limb exceeds Goldilocks modulus",
+		)?;
+	}
+	Ok(out)
+}
+
+/// Convert 32 bytes to a digest (4 field elements), **reducing non-canonical limbs**.
+///
+/// Each 8-byte chunk is interpreted as a `u64` and mapped into the field, where
+/// values `>= P` reduce to `value - P`. This map is **NOT injective**: byte-distinct
+/// inputs can decode to identical field elements and therefore hash identically
+/// downstream. Unlike [`bytes_to_digest`], it never fails.
+///
+/// Use this only where a lossy commitment is explicitly acceptable — e.g. binding
+/// non-field data (such as Blake2 hashes) into a Poseidon preimage where rare
+/// aliasing (~2^-32 per limb) is tolerable and the conversion must be infallible.
+/// For anything relying on uniqueness of the input bytes (deduplication,
+/// authorization, replay prevention), use [`bytes_to_digest`] instead.
+pub fn bytes_to_digest_lossy(input: &BytesDigest) -> [Goldilocks; POSEIDON2_OUTPUT] {
 	core::array::from_fn(|i| {
-		let start = i * 8;
+		let start = i * DIGEST_BYTES_PER_ELEMENT;
 		let bytes: [u8; 8] = input[start..start + 8].try_into().expect("8 bytes");
 		Goldilocks::from_u64(u64::from_le_bytes(bytes))
 	})
@@ -281,14 +371,20 @@ pub fn bytes_to_digest(input: &BytesDigest) -> [Goldilocks; POSEIDON2_OUTPUT] {
 /// - The input length is fixed/known, OR
 /// - Collision resistance is provided by other means (e.g., trie structure)
 ///
+/// Returns an error if any 8-byte chunk encodes a value greater than or equal to
+/// the Goldilocks modulus, since such values would alias with a canonical element.
+///
 /// # Example
 /// ```
 /// use qp_poseidon_core::serialization::bytes_to_felts_compact;
-/// let felts = bytes_to_felts_compact(b"hello world!"); // 12 bytes -> 2 felts
+/// let felts = bytes_to_felts_compact(b"hello world!").unwrap(); // 12 bytes -> 2 felts
 /// assert_eq!(felts.len(), 2);
 /// ```
-pub fn bytes_to_felts_compact(input: &[u8]) -> Vec<Goldilocks> {
-	bytes_to_u64s_compact(input).into_iter().map(from_u64).collect()
+pub fn bytes_to_felts_compact(input: &[u8]) -> Result<Vec<Goldilocks>, &'static str> {
+	bytes_to_u64s_compact(input)
+		.into_iter()
+		.map(|v| try_canonical_limb(v, "Compact encoding limb exceeds Goldilocks modulus"))
+		.collect()
 }
 
 /// Convert variable-length bytes to u64 values using compact encoding (8 bytes per element).
@@ -366,6 +462,49 @@ mod tests {
 	}
 
 	#[test]
+	fn test_bytes_to_u64s_iter_reports_exact_size() {
+		for input_len in 0..=17 {
+			let input = vec![0xA5u8; input_len];
+			let mut iter = bytes_to_u64s_iter(&input);
+
+			let expected_len = (input_len + 1).div_ceil(BYTES_PER_FELT);
+			assert_eq!(iter.len(), expected_len, "input len {input_len}");
+			assert_eq!(iter.size_hint(), (expected_len, Some(expected_len)));
+
+			// The hint must stay exact as the iterator is consumed.
+			let mut remaining = expected_len;
+			while iter.next().is_some() {
+				remaining -= 1;
+				assert_eq!(iter.len(), remaining, "input len {input_len}");
+			}
+			assert_eq!(remaining, 0);
+			assert_eq!(iter.size_hint(), (0, Some(0)));
+		}
+	}
+
+	#[test]
+	fn test_bytes_to_felts_iter_matches_collecting_api() {
+		let test_cases = vec![
+			vec![],
+			vec![0u8],
+			vec![1u8, 2, 3, 4],
+			vec![1u8, 2, 3, 4, 5],
+			vec![255u8; 32],
+			b"hello world".to_vec(),
+		];
+
+		for input in test_cases {
+			let collected = bytes_to_felts(&input);
+			let iterated: Vec<_> = bytes_to_felts_iter(&input).collect();
+			assert_eq!(collected, iterated, "input len {}", input.len());
+
+			let collected_u64s = bytes_to_u64s(&input);
+			let iterated_u64s: Vec<_> = bytes_to_u64s_iter(&input).collect();
+			assert_eq!(collected_u64s, iterated_u64s, "input len {}", input.len());
+		}
+	}
+
+	#[test]
 	fn test_bytes_to_felts_adds_terminator() {
 		let input = [1u8, 2, 3, 4];
 		let felts = bytes_to_felts(&input);
@@ -392,7 +531,7 @@ mod tests {
 		let test_values = vec![0u128, 1_000_000_000_000u128, 21_000_000_000_000_000_000u128];
 
 		for &original in &test_values {
-			let felt = u128_to_quantized_felt(original);
+			let felt = try_u128_to_quantized_felt(original).unwrap();
 			let reconstructed = try_felt_to_quantized_u128(felt).unwrap();
 			let expected = original - (original % AMOUNT_QUANTIZATION_FACTOR);
 			assert_eq!(reconstructed, expected);
@@ -400,10 +539,11 @@ mod tests {
 	}
 
 	#[test]
-	#[should_panic(expected = "exceeds 32-bit limb size")]
-	fn test_u128_to_quantized_felt_panics_when_quantized_exceeds_32bit() {
+	fn test_try_u128_to_quantized_felt_rejects_oversized_value() {
 		let just_over = (BIT_32_LIMB_MASK as u128 + 1) * AMOUNT_QUANTIZATION_FACTOR;
-		let _ = u128_to_quantized_felt(just_over);
+		let result = try_u128_to_quantized_felt(just_over);
+		assert!(result.is_err(), "quantized value above 32-bit limb should be rejected");
+		assert!(result.unwrap_err().contains("exceeds 32-bit limb size"));
 	}
 
 	#[test]
@@ -429,7 +569,7 @@ mod tests {
 	#[test]
 	fn test_digest_4felts_round_trip() {
 		let original = [42u8; 32];
-		let felts: [Goldilocks; POSEIDON2_OUTPUT] = bytes_to_digest(&original);
+		let felts: [Goldilocks; POSEIDON2_OUTPUT] = bytes_to_digest(&original).unwrap();
 		let reconstructed = digest_to_bytes(&felts);
 		assert_eq!(original, reconstructed);
 	}
@@ -437,7 +577,7 @@ mod tests {
 	#[test]
 	fn test_digest_4felts_uses_4_felts() {
 		let original = [42u8; 32];
-		let felts: [Goldilocks; POSEIDON2_OUTPUT] = bytes_to_digest(&original);
+		let felts: [Goldilocks; POSEIDON2_OUTPUT] = bytes_to_digest(&original).unwrap();
 		assert_eq!(felts.len(), POSEIDON2_OUTPUT);
 	}
 
@@ -445,25 +585,25 @@ mod tests {
 	fn test_bytes_to_felts_compact_sizing() {
 		// Empty input -> empty output
 		let empty: [u8; 0] = [];
-		assert_eq!(bytes_to_felts_compact(&empty).len(), 0);
+		assert_eq!(bytes_to_felts_compact(&empty).unwrap().len(), 0);
 
 		// 1-8 bytes -> 1 felt
-		assert_eq!(bytes_to_felts_compact(&[1u8]).len(), 1);
-		assert_eq!(bytes_to_felts_compact(&[1u8; 8]).len(), 1);
+		assert_eq!(bytes_to_felts_compact(&[1u8]).unwrap().len(), 1);
+		assert_eq!(bytes_to_felts_compact(&[1u8; 8]).unwrap().len(), 1);
 
 		// 9-16 bytes -> 2 felts
-		assert_eq!(bytes_to_felts_compact(&[1u8; 9]).len(), 2);
-		assert_eq!(bytes_to_felts_compact(&[1u8; 16]).len(), 2);
+		assert_eq!(bytes_to_felts_compact(&[1u8; 9]).unwrap().len(), 2);
+		assert_eq!(bytes_to_felts_compact(&[1u8; 16]).unwrap().len(), 2);
 
 		// 32 bytes -> 4 felts (same as POSEIDON2_OUTPUT)
-		assert_eq!(bytes_to_felts_compact(&[1u8; 32]).len(), 4);
+		assert_eq!(bytes_to_felts_compact(&[1u8; 32]).unwrap().len(), 4);
 	}
 
 	#[test]
 	fn test_bytes_to_felts_compact_content() {
 		// Verify the encoding is correct
 		let input = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
-		let felts = bytes_to_felts_compact(&input);
+		let felts = bytes_to_felts_compact(&input).unwrap();
 		assert_eq!(felts.len(), 1);
 
 		// Should be little-endian u64
@@ -472,10 +612,42 @@ mod tests {
 	}
 
 	#[test]
+	fn test_bytes_to_felts_compact_rejects_non_canonical_limb() {
+		let result = bytes_to_felts_compact(&P.to_le_bytes());
+		assert_eq!(result, Err("Compact encoding limb exceeds Goldilocks modulus"));
+	}
+
+	#[test]
+	fn test_bytes_to_digest_rejects_non_canonical_limb() {
+		let mut digest = [0u8; 32];
+		digest[..8].copy_from_slice(&P.to_le_bytes());
+		let result = bytes_to_digest(&digest);
+		assert_eq!(result, Err("Digest limb exceeds Goldilocks modulus"));
+	}
+
+	#[test]
+	fn test_bytes_to_digest_lossy_matches_strict_on_canonical_input() {
+		let digest = [42u8; 32];
+		assert_eq!(bytes_to_digest_lossy(&digest), bytes_to_digest(&digest).unwrap());
+	}
+
+	#[test]
+	fn test_bytes_to_digest_lossy_reduces_non_canonical_limb() {
+		// The lossy variant deliberately accepts non-canonical limbs, reducing
+		// them mod P: a limb of P aliases with a limb of 0. This documents the
+		// non-injectivity that callers of the lossy API are opting into.
+		let canonical = [0u8; 32];
+		let mut aliased = canonical;
+		aliased[..8].copy_from_slice(&P.to_le_bytes());
+
+		assert_eq!(bytes_to_digest_lossy(&aliased), bytes_to_digest_lossy(&canonical));
+	}
+
+	#[test]
 	fn test_bytes_to_felts_compact_vs_injective() {
 		// Compact encoding should produce fewer felts than injective encoding
 		let input = [42u8; 32];
-		let compact = bytes_to_felts_compact(&input);
+		let compact = bytes_to_felts_compact(&input).unwrap();
 		let injective = bytes_to_felts(&input);
 
 		// 32 bytes: compact = 4 felts, injective = 9 felts (8 data + 1 terminator)
