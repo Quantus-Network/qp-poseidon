@@ -568,9 +568,6 @@ mod tests {
 	#[test]
 	fn test_rehash_to_bytes_rejects_non_canonical_digest() {
 		let non_canonical = [0xFFu8; 32];
-		assert_eq!(
-			rehash_to_bytes(&non_canonical),
-			Err("Digest limb exceeds Goldilocks modulus")
-		);
+		assert_eq!(rehash_to_bytes(&non_canonical), Err("Digest limb exceeds Goldilocks modulus"));
 	}
 }

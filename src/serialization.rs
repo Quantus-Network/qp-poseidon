@@ -4,8 +4,8 @@
 //!
 //! ## API Overview
 //!
-//! - `bytes_to_felts` / `bytes_to_felts_iter` / `felts_to_bytes` - Variable-length byte arrays
-//!   (4 bytes/felt + terminator) collision-resistant)
+//! - `bytes_to_felts` / `bytes_to_felts_iter` / `felts_to_bytes` - Variable-length byte arrays (4
+//!   bytes/felt + terminator) collision-resistant)
 //! - `digest_to_bytes` / `bytes_to_digest` - Hash output (4 felts ↔ 32 bytes, 8 bytes/felt)
 //!
 //! The 4-bytes/felt encoding is injective (collision-resistant) for arbitrary byte data.

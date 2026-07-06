@@ -4,9 +4,12 @@
 //! field elements (`P` and `0` are the same element), letting byte-distinct inputs
 //! hash to identical outputs. The decoders must reject such inputs.
 
-use qp_poseidon_core::goldilocks::P;
-use qp_poseidon_core::serialization::{bytes_to_digest, bytes_to_felts_compact, digest_to_bytes};
-use qp_poseidon_core::{hash_to_bytes, rehash_to_bytes, Goldilocks};
+use qp_poseidon_core::{
+	goldilocks::P,
+	hash_to_bytes, rehash_to_bytes,
+	serialization::{bytes_to_digest, bytes_to_felts_compact, digest_to_bytes},
+	Goldilocks,
+};
 
 #[test]
 fn bytes_to_digest_rejects_non_canonical_limb() {

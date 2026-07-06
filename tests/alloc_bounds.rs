@@ -4,12 +4,17 @@
 //! materialize heap buffers proportional to the input size before absorbing: the
 //! sponge can absorb incrementally, so byte hashing should use O(1) extra heap.
 
-use qp_poseidon_core::{hash_bytes, hash_squeeze_twice, hash_to_bytes};
-use qp_poseidon_core::serialization::bytes_to_felts;
-use std::alloc::{GlobalAlloc, Layout, System};
-use std::hint::black_box;
-use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
-use std::sync::Mutex;
+use qp_poseidon_core::{
+	hash_bytes, hash_squeeze_twice, hash_to_bytes, serialization::bytes_to_felts,
+};
+use std::{
+	alloc::{GlobalAlloc, Layout, System},
+	hint::black_box,
+	sync::{
+		atomic::{AtomicUsize, Ordering::SeqCst},
+		Mutex,
+	},
+};
 
 struct TrackingAllocator;
 

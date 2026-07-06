@@ -5,8 +5,10 @@
 //! limb arrays aliased to the same serialized digest. Oversized limbs are now
 //! rejected, matching the adjacent `u64s_to_bytes` serializer.
 
-use qp_poseidon_core::hash_bytes;
-use qp_poseidon_core::serialization::{digest_to_u64s, u64s_to_digest};
+use qp_poseidon_core::{
+	hash_bytes,
+	serialization::{digest_to_u64s, u64s_to_digest},
+};
 
 #[test]
 fn oversized_limbs_are_rejected_instead_of_aliasing() {
