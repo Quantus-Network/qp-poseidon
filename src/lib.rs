@@ -9,8 +9,6 @@ pub mod serialization;
 pub use goldilocks::Goldilocks;
 pub use poseidon2::{Poseidon2, POSEIDON2_OUTPUT, SPONGE_CAPACITY, SPONGE_RATE, SPONGE_WIDTH};
 
-use crate::serialization::bytes_to_felts;
-
 // Internal state for Poseidon2 hashing
 struct Poseidon2State {
 	poseidon2: Poseidon2,
@@ -54,9 +52,12 @@ impl Poseidon2State {
 		}
 	}
 
+	/// Absorb bytes using the injective 4-bytes/felt encoding, streaming felts from
+	/// [`serialization::bytes_to_felts_iter`] directly into the sponge.
 	fn append_bytes(&mut self, bytes: &[u8]) {
-		let felts = bytes_to_felts(bytes);
-		self.append(&felts);
+		for felt in serialization::bytes_to_felts_iter(bytes) {
+			self.push_to_buf(felt);
+		}
 	}
 
 	fn finalize_state(mut self) -> [Goldilocks; SPONGE_WIDTH] {
@@ -163,7 +164,7 @@ pub fn hash_squeeze_twice(x: &[u8]) -> [u8; 64] {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::alloc::string::ToString;
+	use crate::{alloc::string::ToString, serialization::bytes_to_felts};
 	use alloc::{format, vec, vec::Vec};
 
 	#[test]

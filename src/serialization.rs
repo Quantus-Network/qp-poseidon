@@ -4,8 +4,8 @@
 //!
 //! ## API Overview
 //!
-//! - `bytes_to_felts` / `felts_to_bytes` - Variable-length byte arrays (4 bytes/felt + terminator)
-//!   collision-resistant)
+//! - `bytes_to_felts` / `bytes_to_felts_iter` / `felts_to_bytes` - Variable-length byte arrays
+//!   (4 bytes/felt + terminator) collision-resistant)
 //! - `digest_to_bytes` / `bytes_to_digest` - Hash output (4 felts ↔ 32 bytes, 8 bytes/felt)
 //!
 //! The 4-bytes/felt encoding is injective (collision-resistant) for arbitrary byte data.
@@ -113,6 +113,15 @@ pub fn try_felts_to_u64(felts: [Goldilocks; FELTS_PER_U64]) -> Result<u64, Strin
 // Variable-length bytes <-> felts
 // ============================================================================
 
+/// Lazily encode bytes into field elements (4 bytes/felt + terminator).
+///
+/// This is the single source of truth for the injective byte encoding. Use this
+/// when you want to consume felts incrementally (e.g. sponge absorption) without
+/// allocating a `Vec`. For an owned vector, use [`bytes_to_felts`].
+pub fn bytes_to_felts_iter(input: &[u8]) -> impl Iterator<Item = Goldilocks> + '_ {
+	bytes_to_u64s_iter(input).map(from_u64)
+}
+
 /// Convert variable-length bytes to field elements.
 ///
 /// Uses 4 bytes per field element with a terminator marker (0x01) appended,
@@ -125,7 +134,7 @@ pub fn try_felts_to_u64(felts: [Goldilocks; FELTS_PER_U64]) -> Result<u64, Strin
 /// assert_eq!(felts.len(), 2); // 5 bytes + terminator = 6 bytes -> ceil(6/4) = 2 felts
 /// ```
 pub fn bytes_to_felts(input: &[u8]) -> Vec<Goldilocks> {
-	bytes_to_u64s(input).into_iter().map(from_u64).collect()
+	bytes_to_felts_iter(input).collect()
 }
 
 /// Convert field elements back to variable-length bytes.
@@ -146,27 +155,45 @@ pub fn string_to_felts(input: &str) -> Vec<Goldilocks> {
 // Core u64-based functions (field-type agnostic)
 // ============================================================================
 
+/// Iterator over u64 limbs produced by the injective 4-byte encoding.
+pub struct BytesToU64sIter<'a> {
+	input: &'a [u8],
+	pos: usize,
+	emitted_terminator: bool,
+}
+
+impl<'a> Iterator for BytesToU64sIter<'a> {
+	type Item = u64;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		if self.pos + BYTES_PER_FELT <= self.input.len() {
+			let chunk = &self.input[self.pos..self.pos + BYTES_PER_FELT];
+			self.pos += BYTES_PER_FELT;
+			let bytes = [chunk[0], chunk[1], chunk[2], chunk[3]];
+			return Some(u32::from_le_bytes(bytes) as u64);
+		}
+
+		if self.emitted_terminator {
+			return None;
+		}
+
+		self.emitted_terminator = true;
+		let remainder = &self.input[self.pos..];
+		let mut last = [0u8; BYTES_PER_FELT];
+		last[..remainder.len()].copy_from_slice(remainder);
+		last[remainder.len()] = 1u8;
+		Some(u32::from_le_bytes(last) as u64)
+	}
+}
+
+/// Lazily encode bytes into u64 limbs (4 bytes per element + terminator).
+pub fn bytes_to_u64s_iter(input: &[u8]) -> BytesToU64sIter<'_> {
+	BytesToU64sIter { input, pos: 0, emitted_terminator: false }
+}
+
 /// Convert variable-length bytes to u64 values (4 bytes per element + terminator).
 pub fn bytes_to_u64s(input: &[u8]) -> Vec<u64> {
-	let input_len = input.len();
-	let len_with_marker = input_len + 1;
-	let padding_needed = (BYTES_PER_FELT - (len_with_marker % BYTES_PER_FELT)) % BYTES_PER_FELT;
-	let final_padded_size = len_with_marker + padding_needed;
-	let num_elements = final_padded_size / BYTES_PER_FELT;
-
-	let mut padded_input = Vec::<u8>::with_capacity(final_padded_size);
-	let mut out = Vec::<u64>::with_capacity(num_elements);
-
-	padded_input.extend_from_slice(input);
-	padded_input.push(1u8); // terminator marker
-	padded_input.resize(final_padded_size, 0u8);
-
-	for chunk in padded_input.chunks_exact(BYTES_PER_FELT) {
-		let bytes = [chunk[0], chunk[1], chunk[2], chunk[3]];
-		out.push(u32::from_le_bytes(bytes) as u64);
-	}
-
-	out
+	bytes_to_u64s_iter(input).collect()
 }
 
 /// Convert u64 values back to bytes (inverse of `bytes_to_u64s`).
@@ -362,6 +389,28 @@ mod tests {
 			let felts = bytes_to_felts(&original);
 			let reconstructed = felts_to_bytes(&felts).unwrap();
 			assert_eq!(original, reconstructed);
+		}
+	}
+
+	#[test]
+	fn test_bytes_to_felts_iter_matches_collecting_api() {
+		let test_cases = vec![
+			vec![],
+			vec![0u8],
+			vec![1u8, 2, 3, 4],
+			vec![1u8, 2, 3, 4, 5],
+			vec![255u8; 32],
+			b"hello world".to_vec(),
+		];
+
+		for input in test_cases {
+			let collected = bytes_to_felts(&input);
+			let iterated: Vec<_> = bytes_to_felts_iter(&input).collect();
+			assert_eq!(collected, iterated, "input len {}", input.len());
+
+			let collected_u64s = bytes_to_u64s(&input);
+			let iterated_u64s: Vec<_> = bytes_to_u64s_iter(&input).collect();
+			assert_eq!(collected_u64s, iterated_u64s, "input len {}", input.len());
 		}
 	}
 
