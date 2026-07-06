@@ -146,9 +146,13 @@ pub fn hash_twice(x: &[Goldilocks]) -> [u8; 32] {
 ///
 /// Decodes the input bytes as 4 field elements (8 bytes/felt), hashes them,
 /// and returns the result as 32 bytes. Use this when chaining hash outputs.
-pub fn rehash_to_bytes(x: &[u8; 32]) -> [u8; 32] {
-	let felts: [Goldilocks; POSEIDON2_OUTPUT] = serialization::bytes_to_digest(x);
-	hash_to_bytes(&felts)
+///
+/// Returns an error if the input is not a canonical digest encoding (any 8-byte
+/// limb `>= P` would alias with a canonical field element and enable collisions).
+/// Digests produced by this library's hash functions are always canonical.
+pub fn rehash_to_bytes(x: &[u8; 32]) -> Result<[u8; 32], &'static str> {
+	let felts: [Goldilocks; POSEIDON2_OUTPUT] = serialization::bytes_to_digest(x)?;
+	Ok(hash_to_bytes(&felts))
 }
 
 /// Hash with 512-bit output by squeezing the sponge twice.
@@ -315,8 +319,9 @@ mod tests {
 
 		assert_eq!(serialization::digest_to_bytes(&hash_felts_result), hash_bytes_result);
 
-		let roundtrip =
-			serialization::digest_to_bytes(&serialization::bytes_to_digest(&hash_bytes_result));
+		let roundtrip = serialization::digest_to_bytes(
+			&serialization::bytes_to_digest(&hash_bytes_result).unwrap(),
+		);
 		assert_eq!(roundtrip, hash_bytes_result);
 	}
 
@@ -347,7 +352,7 @@ mod tests {
 
 		// Method 2: hash_to_bytes then rehash_to_bytes (used in chain for wormhole)
 		let first_hash = hash_to_bytes(&input);
-		let rehashed = rehash_to_bytes(&first_hash);
+		let rehashed = rehash_to_bytes(&first_hash).unwrap();
 
 		assert_eq!(
 			double_hash, rehashed,
@@ -358,7 +363,7 @@ mod tests {
 		for test_input in [b"secret1".as_slice(), b"another_secret", b""] {
 			let felts = bytes_to_felts(test_input);
 			let via_hash_twice = hash_twice(&felts);
-			let via_rehash = rehash_to_bytes(&hash_to_bytes(&felts));
+			let via_rehash = rehash_to_bytes(&hash_to_bytes(&felts)).unwrap();
 			assert_eq!(via_hash_twice, via_rehash);
 		}
 	}
@@ -548,22 +553,24 @@ mod tests {
 		// All zeros
 		let zeros = [0u8; 32];
 		assert_eq!(
-			hex::encode(rehash_to_bytes(&zeros)),
+			hex::encode(rehash_to_bytes(&zeros).unwrap()),
 			"ca0aefbd2e87c9ecc4716b7db8e83937a45dfb06ea10e1d62a4c2f2784002290"
 		);
 
-		// Sequential bytes 0..32
+		// Sequential bytes 0..32 (each 8-byte limb is canonical)
 		let seq: [u8; 32] = core::array::from_fn(|i| i as u8);
 		assert_eq!(
-			hex::encode(rehash_to_bytes(&seq)),
+			hex::encode(rehash_to_bytes(&seq).unwrap()),
 			"c0877470eb2fbfc7cc6f22ab70955509de54f3b89856d6a58399a7b7d9d26252"
 		);
+	}
 
-		// All 0xFF
-		let ones = [0xFFu8; 32];
+	#[test]
+	fn test_rehash_to_bytes_rejects_non_canonical_digest() {
+		let non_canonical = [0xFFu8; 32];
 		assert_eq!(
-			hex::encode(rehash_to_bytes(&ones)),
-			"242fcadf76ea91d398421eb1136b1dbf9f79bdadd79662a21689a0823cf46746"
+			rehash_to_bytes(&non_canonical),
+			Err("Digest limb exceeds Goldilocks modulus")
 		);
 	}
 }

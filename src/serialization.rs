@@ -13,7 +13,10 @@
 
 use alloc::{string::String, vec::Vec};
 
-use crate::{goldilocks::Goldilocks, poseidon2::POSEIDON2_OUTPUT};
+use crate::{
+	goldilocks::{Goldilocks, P},
+	poseidon2::POSEIDON2_OUTPUT,
+};
 
 const BIT_32_LIMB_MASK: u64 = 0xFFFF_FFFF;
 
@@ -37,6 +40,19 @@ pub const BYTES_PER_FELT: usize = 4;
 #[inline]
 fn from_u64(x: u64) -> Goldilocks {
 	Goldilocks::from_u64(x)
+}
+
+/// Convert a raw u64 limb into a field element, rejecting non-canonical encodings.
+///
+/// Values `>= P` alias with `value - P` inside the field, so accepting them would
+/// let byte-distinct inputs decode to the same field element (collision).
+#[inline]
+fn try_canonical_limb(x: u64, err: &'static str) -> Result<Goldilocks, &'static str> {
+	if x < P {
+		Ok(Goldilocks::from_u64(x))
+	} else {
+		Err(err)
+	}
 }
 
 #[inline]
@@ -283,14 +299,23 @@ pub fn digest_to_bytes(input: &[Goldilocks; POSEIDON2_OUTPUT]) -> BytesDigest {
 
 /// Convert 32 bytes to a digest (4 field elements).
 ///
-/// Each 8-byte chunk becomes one field element.
+/// Each 8-byte chunk becomes one canonical field element.
+/// Returns an error if any chunk encodes a value greater than or equal to the
+/// Goldilocks modulus, since such values would alias with a canonical element.
 /// Use this to deserialize hash outputs from storage.
-pub fn bytes_to_digest(input: &BytesDigest) -> [Goldilocks; POSEIDON2_OUTPUT] {
-	core::array::from_fn(|i| {
-		let start = i * 8;
+pub fn bytes_to_digest(
+	input: &BytesDigest,
+) -> Result<[Goldilocks; POSEIDON2_OUTPUT], &'static str> {
+	let mut out = [Goldilocks::ZERO; POSEIDON2_OUTPUT];
+	for (i, felt) in out.iter_mut().enumerate() {
+		let start = i * DIGEST_BYTES_PER_ELEMENT;
 		let bytes: [u8; 8] = input[start..start + 8].try_into().expect("8 bytes");
-		Goldilocks::from_u64(u64::from_le_bytes(bytes))
-	})
+		*felt = try_canonical_limb(
+			u64::from_le_bytes(bytes),
+			"Digest limb exceeds Goldilocks modulus",
+		)?;
+	}
+	Ok(out)
 }
 
 // ============================================================================
@@ -308,14 +333,20 @@ pub fn bytes_to_digest(input: &BytesDigest) -> [Goldilocks; POSEIDON2_OUTPUT] {
 /// - The input length is fixed/known, OR
 /// - Collision resistance is provided by other means (e.g., trie structure)
 ///
+/// Returns an error if any 8-byte chunk encodes a value greater than or equal to
+/// the Goldilocks modulus, since such values would alias with a canonical element.
+///
 /// # Example
 /// ```
 /// use qp_poseidon_core::serialization::bytes_to_felts_compact;
-/// let felts = bytes_to_felts_compact(b"hello world!"); // 12 bytes -> 2 felts
+/// let felts = bytes_to_felts_compact(b"hello world!").unwrap(); // 12 bytes -> 2 felts
 /// assert_eq!(felts.len(), 2);
 /// ```
-pub fn bytes_to_felts_compact(input: &[u8]) -> Vec<Goldilocks> {
-	bytes_to_u64s_compact(input).into_iter().map(from_u64).collect()
+pub fn bytes_to_felts_compact(input: &[u8]) -> Result<Vec<Goldilocks>, &'static str> {
+	bytes_to_u64s_compact(input)
+		.into_iter()
+		.map(|v| try_canonical_limb(v, "Compact encoding limb exceeds Goldilocks modulus"))
+		.collect()
 }
 
 /// Convert variable-length bytes to u64 values using compact encoding (8 bytes per element).
@@ -478,7 +509,7 @@ mod tests {
 	#[test]
 	fn test_digest_4felts_round_trip() {
 		let original = [42u8; 32];
-		let felts: [Goldilocks; POSEIDON2_OUTPUT] = bytes_to_digest(&original);
+		let felts: [Goldilocks; POSEIDON2_OUTPUT] = bytes_to_digest(&original).unwrap();
 		let reconstructed = digest_to_bytes(&felts);
 		assert_eq!(original, reconstructed);
 	}
@@ -486,7 +517,7 @@ mod tests {
 	#[test]
 	fn test_digest_4felts_uses_4_felts() {
 		let original = [42u8; 32];
-		let felts: [Goldilocks; POSEIDON2_OUTPUT] = bytes_to_digest(&original);
+		let felts: [Goldilocks; POSEIDON2_OUTPUT] = bytes_to_digest(&original).unwrap();
 		assert_eq!(felts.len(), POSEIDON2_OUTPUT);
 	}
 
@@ -494,25 +525,25 @@ mod tests {
 	fn test_bytes_to_felts_compact_sizing() {
 		// Empty input -> empty output
 		let empty: [u8; 0] = [];
-		assert_eq!(bytes_to_felts_compact(&empty).len(), 0);
+		assert_eq!(bytes_to_felts_compact(&empty).unwrap().len(), 0);
 
 		// 1-8 bytes -> 1 felt
-		assert_eq!(bytes_to_felts_compact(&[1u8]).len(), 1);
-		assert_eq!(bytes_to_felts_compact(&[1u8; 8]).len(), 1);
+		assert_eq!(bytes_to_felts_compact(&[1u8]).unwrap().len(), 1);
+		assert_eq!(bytes_to_felts_compact(&[1u8; 8]).unwrap().len(), 1);
 
 		// 9-16 bytes -> 2 felts
-		assert_eq!(bytes_to_felts_compact(&[1u8; 9]).len(), 2);
-		assert_eq!(bytes_to_felts_compact(&[1u8; 16]).len(), 2);
+		assert_eq!(bytes_to_felts_compact(&[1u8; 9]).unwrap().len(), 2);
+		assert_eq!(bytes_to_felts_compact(&[1u8; 16]).unwrap().len(), 2);
 
 		// 32 bytes -> 4 felts (same as POSEIDON2_OUTPUT)
-		assert_eq!(bytes_to_felts_compact(&[1u8; 32]).len(), 4);
+		assert_eq!(bytes_to_felts_compact(&[1u8; 32]).unwrap().len(), 4);
 	}
 
 	#[test]
 	fn test_bytes_to_felts_compact_content() {
 		// Verify the encoding is correct
 		let input = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
-		let felts = bytes_to_felts_compact(&input);
+		let felts = bytes_to_felts_compact(&input).unwrap();
 		assert_eq!(felts.len(), 1);
 
 		// Should be little-endian u64
@@ -521,10 +552,24 @@ mod tests {
 	}
 
 	#[test]
+	fn test_bytes_to_felts_compact_rejects_non_canonical_limb() {
+		let result = bytes_to_felts_compact(&P.to_le_bytes());
+		assert_eq!(result, Err("Compact encoding limb exceeds Goldilocks modulus"));
+	}
+
+	#[test]
+	fn test_bytes_to_digest_rejects_non_canonical_limb() {
+		let mut digest = [0u8; 32];
+		digest[..8].copy_from_slice(&P.to_le_bytes());
+		let result = bytes_to_digest(&digest);
+		assert_eq!(result, Err("Digest limb exceeds Goldilocks modulus"));
+	}
+
+	#[test]
 	fn test_bytes_to_felts_compact_vs_injective() {
 		// Compact encoding should produce fewer felts than injective encoding
 		let input = [42u8; 32];
-		let compact = bytes_to_felts_compact(&input);
+		let compact = bytes_to_felts_compact(&input).unwrap();
 		let injective = bytes_to_felts(&input);
 
 		// 32 bytes: compact = 4 felts, injective = 9 felts (8 data + 1 terminator)
