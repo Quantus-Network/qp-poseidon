@@ -207,8 +207,8 @@ impl<'a> Iterator for BytesToU64sIter<'a> {
 	fn size_hint(&self) -> (usize, Option<usize>) {
 		// Remaining full 4-byte chunks, plus the terminator word (which also
 		// carries any final partial chunk) if not yet emitted.
-		let remaining = (self.input.len() - self.pos) / BYTES_PER_FELT
-			+ usize::from(!self.emitted_terminator);
+		let remaining =
+			(self.input.len() - self.pos) / BYTES_PER_FELT + usize::from(!self.emitted_terminator);
 		(remaining, Some(remaining))
 	}
 }
