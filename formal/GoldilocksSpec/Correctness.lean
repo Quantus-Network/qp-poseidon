@@ -298,10 +298,16 @@ theorem rustExp7_mod {a : Nat} (ha : a < 2 ^ 64) :
   rw [rustMul_mod h3lt h4lt, Nat.mul_mod, h3, h4, ← Nat.mul_mod]
   simp only [← Nat.mul_assoc]
 
-/-! ### Capstone -/
+/-! ### Capstones
 
-/-- Every Tier-1 claim in one statement, so a single `#print axioms` in CI
-certifies the whole package (see `ci/AxiomsCheck.lean`). Hypotheses are only
+Two bundle theorems cover the package's full assurance surface, so CI can
+certify it with `#print axioms` on exactly these two names
+(see `ci/AxiomsCheck.lean`): `goldilocks_tier1` for the functional claims
+(congruence + closure) and `goldilocks_tier1_safety` for the no-UB/no-wrap
+claims. A safety lemma that silently grew a custom axiom would flunk the
+footprint gate, because both capstones are inspected. -/
+
+/-- Every Tier-1 functional claim in one statement. Hypotheses are only
 `< 2^64` — correctness holds for every (possibly non-canonical) `u64`
 representative, which is the crate's actual invariant. -/
 theorem goldilocks_tier1 :
@@ -327,6 +333,47 @@ theorem goldilocks_tier1 :
    fun _ ha => ⟨rustCanonical_lt_P ha, rustCanonical_eq_mod ha⟩,
    fun _ ha => rustIsZero_iff ha,
    fun _ _ ha hb => rustEq_iff ha hb⟩
+
+/-- Every Tier-1 no-UB/no-wrap claim in one statement, in source order of the
+Rust it certifies:
+
+1. `add` (`goldilocks.rs:196–205`): in the double-overflow branch, the
+   `assume(self.value > P && rhs.value > P)` holds and the
+   `sum += NEG_ORDER; // Cannot overflow.` fits;
+2. `sub` (`goldilocks.rs:225–234`): in the double-borrow branch, the
+   `assume(self.value < NEG_ORDER - 1 && rhs.value > P)` holds and the
+   `diff -= NEG_ORDER; // Cannot underflow.` does not go below zero;
+3. `halve` (`goldilocks.rs:114`): the `wrapping_add` never wraps;
+4. `reduce128` (`goldilocks.rs:293–296`): when the borrow fires, the
+   `t0 -= NEG_ORDER; // Cannot underflow` does not go below zero;
+5. `reduce128` (`goldilocks.rs:298`): the `u64` product
+   `t1 = x_hi_lo * NEG_ORDER` stays below P (a fortiori never wraps), which
+   establishes the safety contract of the `unsafe` call at :299;
+6. `add_no_canonicalize_trashing_input` (`goldilocks.rs:338`): under that
+   contract, the trailing plain `+` never overflows. -/
+theorem goldilocks_tier1_safety :
+    (∀ a b : Nat, a < 2 ^ 64 → b < 2 ^ 64 → 2 ^ 64 ≤ a + b →
+      2 ^ 64 ≤ (a + b) % 2 ^ 64 + NEG_ORDER →
+      (P < a ∧ P < b) ∧
+      ((a + b) % 2 ^ 64 + NEG_ORDER) % 2 ^ 64 + NEG_ORDER < 2 ^ 64) ∧
+    (∀ a b : Nat, a < 2 ^ 64 → b < 2 ^ 64 → a < b →
+      (a + 2 ^ 64 - b) % 2 ^ 64 < NEG_ORDER →
+      (a < NEG_ORDER - 1 ∧ P < b) ∧
+      NEG_ORDER ≤ ((a + 2 ^ 64 - b) % 2 ^ 64 + 2 ^ 64 - NEG_ORDER) % 2 ^ 64) ∧
+    (∀ a : Nat, a < 2 ^ 64 → a / 2 + a % 2 * HALF_P_PLUS_1 < 2 ^ 64) ∧
+    (∀ lo hh : Nat, lo < 2 ^ 64 → hh < 2 ^ 32 → lo < hh →
+      NEG_ORDER ≤ (lo + 2 ^ 64 - hh) % 2 ^ 64) ∧
+    (∀ hl : Nat, hl < 2 ^ 32 → hl * NEG_ORDER < P) ∧
+    (∀ x y : Nat, x < 2 ^ 64 → y < P → 2 ^ 64 ≤ x + y →
+      (x + y) % 2 ^ 64 + NEG_ORDER < 2 ^ 64) :=
+  ⟨fun _ _ ha hb h1 h2 =>
+      ⟨rustAdd_assume_sound ha hb h1 h2, rustAdd_fixup_no_overflow h1 h2⟩,
+   fun _ _ ha hb h1 h2 =>
+      ⟨rustSub_assume_sound ha hb h1 h2, rustSub_fixup_no_underflow h1 h2⟩,
+   fun _ ha => rustHalve_no_wrap ha,
+   fun _ _ hlo hhh h => reduce_borrow_fixup_no_underflow hlo hhh h,
+   fun _ hhl => reduce_t1_lt_P hhl,
+   fun _ _ hx hy h => addNoCanonicalize_fixup_no_overflow hx hy h⟩
 
 /-! ### Cross-checks against the crate's own test vectors
 

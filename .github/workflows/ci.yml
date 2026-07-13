@@ -135,32 +135,38 @@ jobs:
             echo "::error::formal spec contains a sorry/admit placeholder"
             exit 1
           fi
-      # Axiom-footprint gate: the capstone `goldilocks_tier1` must depend on
-      # exactly the standard Lean axioms — no placeholder axiom, no
-      # `Lean.ofReduceBool` (native evaluation), no stray `axiom` declarations.
-      - name: Assert goldilocks_tier1 axiom footprint
+      # Axiom-footprint gate: both capstones — `goldilocks_tier1` (functional
+      # congruence + closure) and `goldilocks_tier1_safety` (no-UB/no-wrap) —
+      # must depend on exactly the standard Lean axioms: no placeholder axiom,
+      # no `Lean.ofReduceBool` (native evaluation), no stray `axiom`
+      # declarations anywhere in their proof trees. Together the two theorems
+      # bundle every claim the spec makes, so this covers the whole package.
+      - name: Assert capstone axiom footprints
         run: |
           set -euo pipefail
           cd formal
           output=$(lake env lean ci/AxiomsCheck.lean 2>&1)
           printf '%s\n' "$output"
-          if ! grep -q 'depends on axioms' <<< "$output"; then
-            echo "::error::could not read #print axioms for GoldilocksSpec.goldilocks_tier1"
-            exit 1
-          fi
-          axioms=$(sed -n '/depends on axioms:/,/]/p' <<< "$output" | tr -d '\n' | sed 's/.*\[\(.*\)\].*/\1/' | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | sort)
           expected=$(printf '%s\n' \
             'propext' \
             'Classical.choice' \
             'Quot.sound' | sort)
-          if [ "$axioms" != "$expected" ]; then
-            echo "::error::goldilocks_tier1 axiom footprint mismatch"
-            echo "expected exactly:"
-            printf '  %s\n' "$expected"
-            echo "got:"
-            printf '  %s\n' "$axioms"
-            exit 1
-          fi
+          for thm in goldilocks_tier1 goldilocks_tier1_safety; do
+            line=$(grep "'GoldilocksSpec.${thm}' depends on axioms" <<< "$output" || true)
+            if [ -z "$line" ]; then
+              echo "::error::could not read #print axioms for GoldilocksSpec.${thm}"
+              exit 1
+            fi
+            axioms=$(sed 's/.*\[\(.*\)\].*/\1/' <<< "$line" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | sort)
+            if [ "$axioms" != "$expected" ]; then
+              echo "::error::${thm} axiom footprint mismatch"
+              echo "expected exactly:"
+              printf '  %s\n' "$expected"
+              echo "got:"
+              printf '  %s\n' "$axioms"
+              exit 1
+            fi
+          done
 
   security-audit:
     name: 🔐 Security Audit (non-blocking)
