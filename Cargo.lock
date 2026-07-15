@@ -385,7 +385,7 @@ dependencies = [
 
 [[package]]
 name = "qp-poseidon-core"
-version = "3.0.0"
+version = "3.0.2"
 dependencies = [
  "criterion",
  "dudect-bencher",
