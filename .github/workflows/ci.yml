@@ -102,6 +102,72 @@ jobs:
       - name: Generate documentation (workspace)
         run: cargo doc --workspace --locked --no-deps --all-features --release
 
+  formal-spec:
+    name: 📐 Formal Spec (Lean)
+    needs: fast-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      # Builds the Lean 4 formal spec under `formal/`: machine-checked proofs that
+      # the hand-optimized Goldilocks arithmetic in `src/goldilocks.rs` (overflow
+      # tricks, NEG_ORDER corrections, `assume` UB-hints, reduce128) is correct
+      # mod p on the full non-canonical u64 range. The package is deliberately
+      # mathlib-free and builds in seconds; `lake build` type-checks every proof
+      # in the kernel, so an edit that breaks a proof fails CI instead of rotting
+      # silently. elan/lake are installed from `formal/lean-toolchain` (Lean v4.30).
+      #
+      # Defense-in-depth: `leanchecker` re-checks the compiled environment with an
+      # independent kernel checker (bundled on v4.30).
+      - name: Build formal spec (lake build)
+        # Pinned to a full commit SHA (supply-chain hardening). 38fbc41 == v1.5.0.
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1.5.0
+        with:
+          lake-package-directory: "formal"
+          use-mathlib-cache: "false"
+          leanchecker: "true"
+      # No-`sorry` gate: the spec must stay gap-free. Fail if any proof term uses a
+      # `sorry`/`admit`/`sorryAx` placeholder. (Keep the literal words out of
+      # comments/strings under `formal/` so this stays a clean signal.)
+      - name: Assert the spec contains no sorry/admit
+        run: |
+          if grep -rEn '\b(sorry|admit|sorryAx)\b' --include='*.lean' formal --exclude-dir=.lake; then
+            echo "::error::formal spec contains a sorry/admit placeholder"
+            exit 1
+          fi
+      # Axiom-footprint gate: both capstones — `goldilocks_tier1` (functional
+      # congruence + closure) and `goldilocks_tier1_safety` (no-UB/no-wrap) —
+      # must depend on exactly the standard Lean axioms: no placeholder axiom,
+      # no `Lean.ofReduceBool` (native evaluation), no stray `axiom`
+      # declarations anywhere in their proof trees. Together the two theorems
+      # bundle every claim the spec makes, so this covers the whole package.
+      - name: Assert capstone axiom footprints
+        run: |
+          set -euo pipefail
+          cd formal
+          output=$(lake env lean ci/AxiomsCheck.lean 2>&1)
+          printf '%s\n' "$output"
+          expected=$(printf '%s\n' \
+            'propext' \
+            'Classical.choice' \
+            'Quot.sound' | sort)
+          for thm in goldilocks_tier1 goldilocks_tier1_safety; do
+            line=$(grep "'GoldilocksSpec.${thm}' depends on axioms" <<< "$output" || true)
+            if [ -z "$line" ]; then
+              echo "::error::could not read #print axioms for GoldilocksSpec.${thm}"
+              exit 1
+            fi
+            axioms=$(sed 's/.*\[\(.*\)\].*/\1/' <<< "$line" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | sort)
+            if [ "$axioms" != "$expected" ]; then
+              echo "::error::${thm} axiom footprint mismatch"
+              echo "expected exactly:"
+              printf '  %s\n' "$expected"
+              echo "got:"
+              printf '  %s\n' "$axioms"
+              exit 1
+            fi
+          done
+
   security-audit:
     name: 🔐 Security Audit (non-blocking)
     needs: fast-checks

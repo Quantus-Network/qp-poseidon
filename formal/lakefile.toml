@@ -1,0 +1,13 @@
+# Lean 4 formal-spec package for qp-poseidon-core's hand-optimized Goldilocks
+# field arithmetic (`src/goldilocks.rs`).
+#
+# Deliberately dependency-free (core Lean + `omega`/`decide` only), mirroring
+# qp-zk-circuits/formal: it builds in seconds and stays hermetic — no mathlib
+# cache to fetch in CI. Correctness is stated as mod-p congruences over `Nat`
+# (`result % P = spec % P`), which is definitionally what a `ZMod p` statement
+# unfolds to; see GoldilocksSpec/Correctness.lean for the equivalence note.
+defaultTargets = ["GoldilocksSpec"]
+name = "goldilocksSpec"
+
+[[lean_lib]]
+name = "GoldilocksSpec"
