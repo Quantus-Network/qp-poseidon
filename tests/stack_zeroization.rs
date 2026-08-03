@@ -1,19 +1,12 @@
-//! Regression test (security review): hash outputs must not survive in dead
-//! stack memory after the hash call returns.
-//!
-//! Consumers hash secret material with this crate — e.g. Quantus wormhole
-//! secrets are literally `hash_bytes(entropy)`, so the *output* of the hash
-//! is a secret. The finalize path previously moved the whole sponge state by
-//! value through three `self`-consuming methods and returned the state array
-//! by value; every one of those moves left a dead, never-dropped stack copy
-//! of the output (and of buffered input) that no caller could ever wipe. The
-//! fixed pipeline finalizes through `&mut self`, serializes the digest
-//! directly from the state, and wipes the sponge before returning.
+//! Regression test (security review): hash inputs and outputs must not
+//! survive in dead stack memory after the hash call returns — consumers hash
+//! secrets (e.g. Quantus wormhole secrets are `hash_bytes` outputs). The old
+//! `self`-consuming finalize chain moved the sponge by value, leaving dead
+//! unwipeable copies; the fixed pipeline finalizes in place and wipes.
 //!
 //! Technique: run the hash on a freshly painted stack buffer (`psm`), then
-//! scan the buffer for the known output pattern. The assertion is about
-//! codegen (which temporaries get wiped), so it is only compiled for
-//! optimized builds (`cargo test --release`).
+//! scan the buffer for the known pattern. The assertion is about codegen, so
+//! it is only compiled for optimized builds (`cargo test --release`).
 #![cfg(not(debug_assertions))]
 
 use std::alloc::{alloc, dealloc, Layout};
@@ -70,9 +63,8 @@ fn hash_bytes_output_never_survives_on_stack() {
 	let leaked = probe_stack_for(&output, || {
 		let mut out = hash_bytes(&INPUT);
 		core::hint::black_box(&out);
-		// `out` is the caller-owned copy; a secret-holding caller wipes it
-		// (the wormhole code does). Wipe it here so the scan only sees
-		// copies the library left behind, which no caller could reach.
+		// Wipe the caller-owned copy (as a secret-holding caller would) so
+		// the scan only sees copies the library left behind.
 		out.fill(0);
 		core::hint::black_box(&mut out);
 	});
@@ -99,15 +91,12 @@ fn hash_twice_input_never_survives_on_stack() {
 	}
 
 	let leaked = probe_stack_for(&input_pattern, || {
-		// Bound as `mut` from the start: a later `let mut felts = felts;`
-		// rebinding would be a move that leaves the original slot as dead
-		// unwipeable residue — exactly the bug class this probe hunts.
+		// `mut` from the start: rebinding later would move `felts`, leaving
+		// the original slot as dead residue — the bug class this probe hunts.
 		let mut felts = bytes_to_digest_lossy(&INPUT);
 		let out = hash_twice(&felts);
 		core::hint::black_box(&out);
-		// `felts` is the caller's own copy; a real secret-holding caller
-		// wipes it (the wormhole code does). Simulate that here so the scan
-		// only sees sponge-internal copies.
+		// Wipe the caller-owned copy so the scan only sees sponge-internal ones.
 		felts.fill(qp_poseidon_core::Goldilocks::ZERO);
 		core::hint::black_box(&mut felts);
 	});

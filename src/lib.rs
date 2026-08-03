@@ -63,15 +63,11 @@ impl Poseidon2State {
 	/// Pad and absorb the final partial block, leaving the digest in
 	/// `state[..POSEIDON2_OUTPUT]`.
 	///
-	/// Takes `&mut self` deliberately (security review): the previous
-	/// `self`-consuming finalize chain moved the entire sponge — buffered
-	/// input and post-permutation output — by value through several stack
-	/// frames, and Rust moves are copies that leave the moved-from slot dead
-	/// but never dropped, beyond any caller's ability to wipe. Callers hash
-	/// secret material (e.g. wormhole secrets are `hash_bytes` outputs), so
-	/// every such dead copy is key-material residue. Finalizing in place
-	/// keeps the sponge in exactly one location, which [`Self::wipe`] then
-	/// clears (pinned by `tests/stack_zeroization.rs`, release builds).
+	/// Takes `&mut self` rather than `self` (security review): consuming
+	/// finalizers moved the sponge by value, leaving dead stack copies of
+	/// secret input/output that no one could wipe. In-place finalize keeps
+	/// the sponge in one slot for [`Self::wipe`] to clear (pinned by
+	/// `tests/stack_zeroization.rs`).
 	fn finalize_state(&mut self) {
 		self.push_to_buf(Goldilocks::ONE);
 		while self.buf_len != 0 {
@@ -86,11 +82,8 @@ impl Poseidon2State {
 			.expect("POSEIDON2_OUTPUT <= SPONGE_WIDTH")
 	}
 
-	// The `_to_bytes` finalizers below pass `digest_to_bytes` a *borrowed*
-	// subarray of the state (`try_into` on a slice yields `&[Goldilocks; 4]`,
-	// a reference conversion with no copy) rather than an owned felt array:
-	// an owned intermediate would be one more digest copy on the stack for
-	// [`Self::wipe`] to miss.
+	// `try_into` on the state slice yields a *borrowed* `&[Goldilocks; 4]`,
+	// so no owned digest copy is created for [`Self::wipe`] to miss.
 	fn finalize_to_bytes(&mut self) -> [u8; 32] {
 		self.finalize_state();
 		serialization::digest_to_bytes(
@@ -117,11 +110,8 @@ impl Poseidon2State {
 		out
 	}
 
-	/// Overwrite the sponge (absorbed input and squeezed output) with zeros.
-	///
-	/// Called by every public hash function before returning, so the only
-	/// copy of the digest that survives the call is the returned value, and
-	/// no absorbed input block lingers in the buffer.
+	/// Zero the sponge (absorbed input and squeezed output). Every public
+	/// hash function calls this before returning.
 	fn wipe(&mut self) {
 		wipe_felts(&mut self.state);
 		wipe_felts(&mut self.buf);
@@ -129,15 +119,9 @@ impl Poseidon2State {
 	}
 }
 
-/// Overwrite field elements with zeros, resistant to dead-store elimination.
-///
-/// `Goldilocks` has no `Drop`/zeroization behavior, and a plain zeroing loop
-/// over memory that is never read again is a dead store the optimizer may
-/// elide. Routing the just-written slice through [`core::hint::black_box`]
-/// makes the compiler assume the zeros are observed, so the fill must be
-/// materialized. This is best-effort by the language rules (no `unsafe`, no
-/// dependency), and the release-mode painted-stack probe in
-/// `tests/stack_zeroization.rs` pins that it actually survives codegen.
+/// Zero field elements, resistant to dead-store elimination: `black_box`
+/// makes the compiler assume the zeros are observed, so the fill can't be
+/// elided (verified by the painted-stack probe in `tests/stack_zeroization.rs`).
 fn wipe_felts(felts: &mut [Goldilocks]) {
 	felts.fill(Goldilocks::ZERO);
 	core::hint::black_box(felts);
@@ -152,9 +136,8 @@ fn wipe_felts(felts: &mut [Goldilocks]) {
 /// This is the primary hash function. Use this when you need to chain hashes
 /// or work with field elements directly (e.g., in circuits).
 ///
-/// The sponge state is wiped before returning, so no copy of the input or
-/// output survives this call's stack frame (inputs and outputs may be
-/// secrets — e.g. wormhole secret derivation hashes secret material).
+/// The sponge state is wiped before returning, so no copy of the (possibly
+/// secret) input or output survives this call's stack frame.
 pub fn hash_to_felts(x: &[Goldilocks]) -> [Goldilocks; POSEIDON2_OUTPUT] {
 	let mut st = Poseidon2State::new();
 	st.append(x);
