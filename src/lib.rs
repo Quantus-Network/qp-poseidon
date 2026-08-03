@@ -86,28 +86,34 @@ impl Poseidon2State {
 			.expect("POSEIDON2_OUTPUT <= SPONGE_WIDTH")
 	}
 
+	// The `_to_bytes` finalizers below pass `digest_to_bytes` a *borrowed*
+	// subarray of the state (`try_into` on a slice yields `&[Goldilocks; 4]`,
+	// a reference conversion with no copy) rather than an owned felt array:
+	// an owned intermediate would be one more digest copy on the stack for
+	// [`Self::wipe`] to miss.
 	fn finalize_to_bytes(&mut self) -> [u8; 32] {
 		self.finalize_state();
-		self.digest_bytes()
+		serialization::digest_to_bytes(
+			self.state[..POSEIDON2_OUTPUT]
+				.try_into()
+				.expect("POSEIDON2_OUTPUT <= SPONGE_WIDTH"),
+		)
 	}
 
 	fn finalize_squeeze_twice(&mut self) -> [u8; 64] {
 		self.finalize_state();
 		let mut out = [0u8; 64];
-		out[..32].copy_from_slice(&self.digest_bytes());
+		out[..32].copy_from_slice(&serialization::digest_to_bytes(
+			self.state[..POSEIDON2_OUTPUT]
+				.try_into()
+				.expect("POSEIDON2_OUTPUT <= SPONGE_WIDTH"),
+		));
 		self.poseidon2.permute_mut(&mut self.state);
-		out[32..].copy_from_slice(&self.digest_bytes());
-		out
-	}
-
-	/// Serialize the digest directly from the state (same encoding as
-	/// [`serialization::digest_to_bytes`]), without materializing an
-	/// intermediate felt array.
-	fn digest_bytes(&self) -> [u8; 32] {
-		let mut out = [0u8; 32];
-		for (chunk, felt) in out.chunks_exact_mut(8).zip(&self.state[..POSEIDON2_OUTPUT]) {
-			chunk.copy_from_slice(&felt.as_canonical_u64().to_le_bytes());
-		}
+		out[32..].copy_from_slice(&serialization::digest_to_bytes(
+			self.state[..POSEIDON2_OUTPUT]
+				.try_into()
+				.expect("POSEIDON2_OUTPUT second squeeze <= SPONGE_WIDTH"),
+		));
 		out
 	}
 
