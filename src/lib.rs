@@ -60,43 +60,81 @@ impl Poseidon2State {
 		}
 	}
 
-	fn finalize_state(mut self) -> [Goldilocks; SPONGE_WIDTH] {
+	/// Pad and absorb the final partial block, leaving the digest in
+	/// `state[..POSEIDON2_OUTPUT]`.
+	///
+	/// Takes `&mut self` deliberately (security review): the previous
+	/// `self`-consuming finalize chain moved the entire sponge — buffered
+	/// input and post-permutation output — by value through several stack
+	/// frames, and Rust moves are copies that leave the moved-from slot dead
+	/// but never dropped, beyond any caller's ability to wipe. Callers hash
+	/// secret material (e.g. wormhole secrets are `hash_bytes` outputs), so
+	/// every such dead copy is key-material residue. Finalizing in place
+	/// keeps the sponge in exactly one location, which [`Self::wipe`] then
+	/// clears (pinned by `tests/stack_zeroization.rs`, release builds).
+	fn finalize_state(&mut self) {
 		self.push_to_buf(Goldilocks::ONE);
 		while self.buf_len != 0 {
 			self.push_to_buf(Goldilocks::ZERO);
 		}
-		self.state
 	}
 
-	fn finalize_to_felts(self) -> [Goldilocks; POSEIDON2_OUTPUT] {
-		let state = self.finalize_state();
-		state[..POSEIDON2_OUTPUT].try_into().expect("POSEIDON2_OUTPUT <= SPONGE_WIDTH")
+	fn finalize_to_felts(&mut self) -> [Goldilocks; POSEIDON2_OUTPUT] {
+		self.finalize_state();
+		self.state[..POSEIDON2_OUTPUT]
+			.try_into()
+			.expect("POSEIDON2_OUTPUT <= SPONGE_WIDTH")
 	}
 
-	fn finalize_to_bytes(self) -> [u8; 32] {
-		serialization::digest_to_bytes(&self.finalize_to_felts())
+	fn finalize_to_bytes(&mut self) -> [u8; 32] {
+		self.finalize_state();
+		self.digest_bytes()
 	}
 
-	fn finalize_squeeze_twice(mut self) -> [u8; 64] {
-		self.push_to_buf(Goldilocks::ONE);
-		while self.buf_len != 0 {
-			self.push_to_buf(Goldilocks::ZERO);
-		}
-
-		let h1: [u8; 32] = serialization::digest_to_bytes(
-			self.state[..POSEIDON2_OUTPUT]
-				.try_into()
-				.expect("POSEIDON2_OUTPUT <= SPONGE_WIDTH"),
-		);
+	fn finalize_squeeze_twice(&mut self) -> [u8; 64] {
+		self.finalize_state();
+		let mut out = [0u8; 64];
+		out[..32].copy_from_slice(&self.digest_bytes());
 		self.poseidon2.permute_mut(&mut self.state);
-		let h2: [u8; 32] = serialization::digest_to_bytes(
-			self.state[..POSEIDON2_OUTPUT]
-				.try_into()
-				.expect("POSEIDON2_OUTPUT second squeeze <= SPONGE_WIDTH"),
-		);
-
-		[h1, h2].concat().try_into().expect("64 bytes")
+		out[32..].copy_from_slice(&self.digest_bytes());
+		out
 	}
+
+	/// Serialize the digest directly from the state (same encoding as
+	/// [`serialization::digest_to_bytes`]), without materializing an
+	/// intermediate felt array.
+	fn digest_bytes(&self) -> [u8; 32] {
+		let mut out = [0u8; 32];
+		for (chunk, felt) in out.chunks_exact_mut(8).zip(&self.state[..POSEIDON2_OUTPUT]) {
+			chunk.copy_from_slice(&felt.as_canonical_u64().to_le_bytes());
+		}
+		out
+	}
+
+	/// Overwrite the sponge (absorbed input and squeezed output) with zeros.
+	///
+	/// Called by every public hash function before returning, so the only
+	/// copy of the digest that survives the call is the returned value, and
+	/// no absorbed input block lingers in the buffer.
+	fn wipe(&mut self) {
+		wipe_felts(&mut self.state);
+		wipe_felts(&mut self.buf);
+		self.buf_len = 0;
+	}
+}
+
+/// Overwrite field elements with zeros, resistant to dead-store elimination.
+///
+/// `Goldilocks` has no `Drop`/zeroization behavior, and a plain zeroing loop
+/// over memory that is never read again is a dead store the optimizer may
+/// elide. Routing the just-written slice through [`core::hint::black_box`]
+/// makes the compiler assume the zeros are observed, so the fill must be
+/// materialized. This is best-effort by the language rules (no `unsafe`, no
+/// dependency), and the release-mode painted-stack probe in
+/// `tests/stack_zeroization.rs` pins that it actually survives codegen.
+fn wipe_felts(felts: &mut [Goldilocks]) {
+	felts.fill(Goldilocks::ZERO);
+	core::hint::black_box(felts);
 }
 
 // ============================================================================
@@ -107,39 +145,58 @@ impl Poseidon2State {
 ///
 /// This is the primary hash function. Use this when you need to chain hashes
 /// or work with field elements directly (e.g., in circuits).
+///
+/// The sponge state is wiped before returning, so no copy of the input or
+/// output survives this call's stack frame (inputs and outputs may be
+/// secrets — e.g. wormhole secret derivation hashes secret material).
 pub fn hash_to_felts(x: &[Goldilocks]) -> [Goldilocks; POSEIDON2_OUTPUT] {
 	let mut st = Poseidon2State::new();
 	st.append(x);
-	st.finalize_to_felts()
+	let out = st.finalize_to_felts();
+	st.wipe();
+	out
 }
 
 /// Hash field elements to a 32-byte digest.
 ///
 /// Converts the 4-felt hash output to bytes (8 bytes per felt).
 /// Use this when you need bytes for storage, transmission, or display.
+///
+/// The sponge state is wiped before returning; see [`hash_to_felts`].
 pub fn hash_to_bytes(x: &[Goldilocks]) -> [u8; 32] {
 	let mut st = Poseidon2State::new();
 	st.append(x);
-	st.finalize_to_bytes()
+	let out = st.finalize_to_bytes();
+	st.wipe();
+	out
 }
 
 /// Hash bytes to a 32-byte digest.
 ///
 /// Converts bytes to field elements (4 bytes per felt with terminator),
 /// then hashes the resulting field elements.
+///
+/// The sponge state is wiped before returning; see [`hash_to_felts`].
 pub fn hash_bytes(x: &[u8]) -> [u8; 32] {
 	let mut st = Poseidon2State::new();
 	st.append_bytes(x);
-	st.finalize_to_bytes()
+	let out = st.finalize_to_bytes();
+	st.wipe();
+	out
 }
 
 /// Double hash: hash(hash(input)), returning bytes.
 ///
 /// The inner hash output (4 felts) is re-hashed directly as field elements.
 /// Used for wormhole address derivation.
+///
+/// The sponge state and the intermediate digest are wiped before returning;
+/// see [`hash_to_felts`].
 pub fn hash_twice(x: &[Goldilocks]) -> [u8; 32] {
-	let inner = hash_to_felts(x);
-	hash_to_bytes(&inner)
+	let mut inner = hash_to_felts(x);
+	let out = hash_to_bytes(&inner);
+	wipe_felts(&mut inner);
+	out
 }
 
 /// Re-hash a 32-byte digest to produce a new 32-byte digest.
@@ -151,18 +208,24 @@ pub fn hash_twice(x: &[Goldilocks]) -> [u8; 32] {
 /// limb `>= P` would alias with a canonical field element and enable collisions).
 /// Digests produced by this library's hash functions are always canonical.
 pub fn rehash_to_bytes(x: &[u8; 32]) -> Result<[u8; 32], &'static str> {
-	let felts: [Goldilocks; POSEIDON2_OUTPUT] = serialization::bytes_to_digest(x)?;
-	Ok(hash_to_bytes(&felts))
+	let mut felts: [Goldilocks; POSEIDON2_OUTPUT] = serialization::bytes_to_digest(x)?;
+	let out = hash_to_bytes(&felts);
+	wipe_felts(&mut felts);
+	Ok(out)
 }
 
 /// Hash with 512-bit output by squeezing the sponge twice.
 ///
 /// Returns 64 bytes: first 32 from initial squeeze, next 32 from second squeeze.
 /// Used for mining proof-of-work.
+///
+/// The sponge state is wiped before returning; see [`hash_to_felts`].
 pub fn hash_squeeze_twice(x: &[u8]) -> [u8; 64] {
 	let mut st = Poseidon2State::new();
 	st.append_bytes(x);
-	st.finalize_squeeze_twice()
+	let out = st.finalize_squeeze_twice();
+	st.wipe();
+	out
 }
 
 #[cfg(test)]
