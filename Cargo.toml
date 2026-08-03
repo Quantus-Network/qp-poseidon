@@ -22,6 +22,8 @@ categories = ["cryptography", "no-std"]
 hex = "0.4.3"
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
 dudect-bencher = "0.6"
+# Painted-stack probe used by tests/stack_zeroization.rs.
+psm = "=0.1.31"
 
 [features]
 default = []
