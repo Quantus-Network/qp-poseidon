@@ -11,16 +11,20 @@ pub use poseidon2::{Poseidon2, POSEIDON2_OUTPUT, SPONGE_CAPACITY, SPONGE_RATE, S
 
 // Internal state for Poseidon2 hashing
 struct Poseidon2State {
-	poseidon2: Poseidon2,
+	poseidon2: &'static Poseidon2,
 	state: [Goldilocks; SPONGE_WIDTH],
 	buf: [Goldilocks; SPONGE_RATE],
 	buf_len: usize,
 }
 
+/// Shared instance: the permutation constants are fixed, so constructing a
+/// `Poseidon2` per hash would just re-copy ~1KB of constant data per call.
+static POSEIDON2: Poseidon2 = Poseidon2::new();
+
 impl Poseidon2State {
 	fn new() -> Self {
 		Self {
-			poseidon2: Poseidon2::new(),
+			poseidon2: &POSEIDON2,
 			state: [Goldilocks::ZERO; SPONGE_WIDTH],
 			buf: [Goldilocks::ZERO; SPONGE_RATE],
 			buf_len: 0,

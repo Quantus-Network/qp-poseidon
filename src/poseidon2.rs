@@ -219,17 +219,49 @@ impl Default for Poseidon2 {
 
 impl Poseidon2 {
 	/// Create a new Poseidon2 instance with precomputed constants.
-	pub fn new() -> Self {
-		let internal_constants = core::array::from_fn(|i| Goldilocks::new(INTERNAL_CONSTANTS[i]));
-		let matrix_diag = core::array::from_fn(|i| Goldilocks::new(MATRIX_DIAG[i]));
+	///
+	/// `const` so callers can hoist the instance into a `static` and avoid
+	/// re-initializing the constants on every hash.
+	pub const fn new() -> Self {
+		let mut internal_constants = [Goldilocks::ZERO; INTERNAL_ROUNDS];
+		let mut i = 0;
+		while i < INTERNAL_ROUNDS {
+			internal_constants[i] = Goldilocks::new(INTERNAL_CONSTANTS[i]);
+			i += 1;
+		}
 
-		let initial_external_constants = core::array::from_fn(|r| {
-			core::array::from_fn(|i| Goldilocks::new(INITIAL_EXTERNAL_CONSTANTS[r][i]))
-		});
+		let mut matrix_diag = [Goldilocks::ZERO; SPONGE_WIDTH];
+		let mut i = 0;
+		while i < SPONGE_WIDTH {
+			matrix_diag[i] = Goldilocks::new(MATRIX_DIAG[i]);
+			i += 1;
+		}
 
-		let terminal_external_constants = core::array::from_fn(|r| {
-			core::array::from_fn(|i| Goldilocks::new(TERMINAL_EXTERNAL_CONSTANTS[r][i]))
-		});
+		let mut initial_external_constants =
+			[[Goldilocks::ZERO; SPONGE_WIDTH]; HALF_EXTERNAL_ROUNDS];
+		let mut r = 0;
+		while r < HALF_EXTERNAL_ROUNDS {
+			let mut i = 0;
+			while i < SPONGE_WIDTH {
+				initial_external_constants[r][i] =
+					Goldilocks::new(INITIAL_EXTERNAL_CONSTANTS[r][i]);
+				i += 1;
+			}
+			r += 1;
+		}
+
+		let mut terminal_external_constants =
+			[[Goldilocks::ZERO; SPONGE_WIDTH]; HALF_EXTERNAL_ROUNDS];
+		let mut r = 0;
+		while r < HALF_EXTERNAL_ROUNDS {
+			let mut i = 0;
+			while i < SPONGE_WIDTH {
+				terminal_external_constants[r][i] =
+					Goldilocks::new(TERMINAL_EXTERNAL_CONSTANTS[r][i]);
+				i += 1;
+			}
+			r += 1;
+		}
 
 		Self {
 			internal_constants,
